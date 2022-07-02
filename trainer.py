@@ -69,7 +69,7 @@ class Trainer:
 
             self.generator = Generator(model.generator).to(self.gpu)
 
-            if (k == "discriminator" for k in list(model.keys())):
+            if self.gan_train:
                 from archs.SCUNet.models import Discriminator
 
                 self.discriminator = Discriminator(model.discriminator).to(self.gpu)
@@ -79,10 +79,15 @@ class Trainer:
 
             self.generator = Generator(model.generator).to(self.gpu)
 
-            if (k == "discriminator" for k in list(model.keys())):
+            if self.gan_train:
                 from archs.RealESRGAN.models import Discriminator
 
                 self.discriminator = Discriminator(model.discriminator).to(self.gpu)
+
+        elif model.name.lower() == "edsr":
+            from archs.EDSR.models import Generator
+
+            self.generator = Generator(model.generator).to(self.gpu)
 
         log.info("Initialized the model")
 
@@ -102,20 +107,21 @@ class Trainer:
         else:
             log.info("Train the generator without checkpoint")
 
-        if model.discriminator.path:
-            log.info("Train the discriminator with checkpoint")
-            log.info(f"Loading the checkpoint from : {model.discriminator.path}")
-            ckpt = torch.load(
-                model.discriminator.path, map_location=lambda storage, loc: storage
-            )
-            if len(ckpt) == 3:
-                self.num_iteration = ckpt["iteration"]
-                self.discriminator.load_state_dict(ckpt["d"])
-                self.d_optim.load_state_dict(ckpt["d_optim"])
+        if self.gan_train:
+            if model.discriminator.path:
+                log.info("Train the discriminator with checkpoint")
+                log.info(f"Loading the checkpoint from : {model.discriminator.path}")
+                ckpt = torch.load(
+                    model.discriminator.path, map_location=lambda storage, loc: storage
+                )
+                if len(ckpt) == 3:
+                    self.num_iteration = ckpt["iteration"]
+                    self.discriminator.load_state_dict(ckpt["d"])
+                    self.d_optim.load_state_dict(ckpt["d_optim"])
+                else:
+                    self.discriminator.load_state_dict(ckpt)
             else:
-                self.discriminator.load_state_dict(ckpt)
-        else:
-            log.info("Train the discriminator without checkpoint")
+                log.info("Train the discriminator without checkpoint")
 
         log.info("Initialized the checkpoints")
 
