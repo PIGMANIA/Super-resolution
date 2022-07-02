@@ -1,0 +1,19 @@
+name: SCUNet
+
+generator:
+  path: "/workspace/SCUNet/model_zoo/scunet_color_real_psnr.pth"
+  state_dict: ["g", "g_optim", "iteration"]
+  in_nc: 3
+  config: [4, 4, 4, 4, 4, 4, 4]
+  dim: 64
+  head_dim: 32
+  window_size: 8
+  drop_path_rate: 0.0
+  input_resolution: 256
+
+discriminator:
+  path: ""
+  state_dict: ["d", "d_optim", "iteration"]
+  num_in_ch: 3
+  num_feat: 64
+  skip_connection: true
