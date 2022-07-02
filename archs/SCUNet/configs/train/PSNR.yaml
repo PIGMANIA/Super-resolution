@@ -2,10 +2,11 @@ common:
   iteration: 800000
   seed: 123
   use_wandb: false
-  ckpt_dir: "cpkt"
+  ckpt_dir: "psnr_cpkt"
+  GAN: false
 
 loss:
-  lists: ["MAE", "GANLoss", "PerceptualLoss"]
+  lists: ["MAE"]
   GANLoss:
     real_label_val: 1.0
     fake_label_val: 0.0
@@ -25,7 +26,7 @@ optim:
   
 scheduler:
   type: MultiStepLR
-  milestones: [200000]
+  milestones: [200000, 400000, 600000]
   gamma: 0.5
 
 dataset:

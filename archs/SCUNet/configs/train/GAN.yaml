@@ -2,7 +2,8 @@ common:
   iteration: 800000
   seed: 123
   use_wandb: false
-  ckpt_dir: "cpkt"
+  ckpt_dir: "gan_cpkt"
+  GAN: true
 
 loss:
   lists: ["MAE", "GANLoss", "PerceptualLoss"]
@@ -17,7 +18,7 @@ loss:
 optim:
   type: "Adam"
   Adam:
-    lr: 0.0002
+    lr: !!float 1e-4
     betas: [0.9, 0.999]
     eps: 1e-08
     weight_decay: 0
@@ -25,7 +26,7 @@ optim:
   
 scheduler:
   type: MultiStepLR
-  milestones: [200000]
+  milestones: [400000]
   gamma: 0.5
 
 dataset:
