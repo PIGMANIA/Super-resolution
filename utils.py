@@ -18,7 +18,6 @@ def check_image_file(filename: str):
         ]
     )
 
-
 def uint2single(img):
     return np.float32(img / 255.0)
 

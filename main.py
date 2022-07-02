@@ -2,7 +2,7 @@ import hydra
 from trainer import Trainer
 
 
-@hydra.main(config_path="./archs/SCUNet/configs", config_name="train.yaml")
+@hydra.main(config_path="./archs/RealESRGAN/configs", config_name="train.yaml")
 def main(cfg):
     Trainer(cfg, 0)
 
