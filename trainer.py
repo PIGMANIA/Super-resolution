@@ -84,6 +84,16 @@ class Trainer:
 
                 self.discriminator = Discriminator(model.discriminator).to(self.gpu)
 
+        elif model.name.lower() == "bsrgan":
+            from archs.BSRGAN.models import Generator
+
+            self.generator = Generator(model.generator).to(self.gpu)
+
+            if self.gan_train:
+                from archs.BSRGAN.models import Discriminator
+
+                self.discriminator = Discriminator(model.discriminator).to(self.gpu)
+
         elif model.name.lower() == "edsr":
             from archs.EDSR.models import Generator
 
