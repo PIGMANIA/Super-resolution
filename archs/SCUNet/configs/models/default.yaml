@@ -1,7 +1,7 @@
 name: SCUNet
 
 generator:
-  path: "/workspace/SCUNet/model_zoo/scunet_color_real_psnr.pth"
+  path: "/workspace/SuperResolution/outputs/SCUNet/train/2022-07-04/00-08-20/psnr_cpkt/010000.pth"
   state_dict: ["g", "g_optim", "iteration"]
   in_nc: 3
   config: [4, 4, 4, 4, 4, 4, 4]

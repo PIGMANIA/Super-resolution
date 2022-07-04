@@ -672,24 +672,24 @@ class Degradation:
             radius (float): Kernel size of Gaussian blur. Default: 50.
             threshold (int):
         """
-        # if self.sharpen_radius % 2 == 0:
-        #     self.sharpen_radius += 1
-        # blur = cv2.GaussianBlur(img, (self.sharpen_radius, self.sharpen_radius), 0)
-        # residual = img - blur
-        # mask = np.abs(residual) * 255 > self.sharpen_threshold
-        # mask = mask.astype("float32")
-        # soft_mask = cv2.GaussianBlur(
-        #     mask, (self.sharpen_radius, self.sharpen_radius), 0
-        # )
+        if self.sharpen_radius % 2 == 0:
+            self.sharpen_radius += 1
+        blur = cv2.GaussianBlur(img, (self.sharpen_radius, self.sharpen_radius), 0)
+        residual = img - blur
+        mask = np.abs(residual) * 255 > self.sharpen_threshold
+        mask = mask.astype("float32")
+        soft_mask = cv2.GaussianBlur(
+            mask, (self.sharpen_radius, self.sharpen_radius), 0
+        )
 
-        # K = img + self.sharpen_weight * residual
-        # K = np.clip(K, 0, 1)
-        # return soft_mask * K + (1 - soft_mask) * img
-        img = single2uint(img)
-        kernel_3 = np.array([[0, -0.5, 0], [-0.5, 3, -0.5], [0, -0.5, 0]])
-        img = cv2.filter2D(src=img, ddepth=-1, kernel=kernel_3)
-        img = uint2single(img)
-        return img
+        K = img + self.sharpen_weight * residual
+        K = np.clip(K, 0, 1)
+        return soft_mask * K + (1 - soft_mask) * img
+        # img = single2uint(img)
+        # kernel_3 = np.array([[0, -0.5, 0], [-0.5, 3, -0.5], [0, -0.5, 0]])
+        # img = cv2.filter2D(src=img, ddepth=-1, kernel=kernel_3)
+        # img = uint2single(img)
+        # return img
 
     def add_JPEG_noise(self, img):
         quality_factor = random.randint(30, 95)

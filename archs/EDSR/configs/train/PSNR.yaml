@@ -35,7 +35,9 @@ dataset:
   batch_size: 8
   patch_size : 256
   num_workers: 4
-  
+  aug:
+    use: true
+    
   sharpen:
     use: false
     weight: 1

@@ -36,14 +36,17 @@ dataset:
   patch_size : 128
   num_workers: 4
   
+  aug:
+    use: true
+
   sharpen:
     use: true
-    weight: 1
+    weight: 0.15
     radius: 50
     threshold: 10
 
   clahe:
-    use: true
+    use: false
 
   deg:
     use: true

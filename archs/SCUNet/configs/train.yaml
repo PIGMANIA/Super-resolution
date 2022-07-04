@@ -4,5 +4,5 @@ hydra:
 
 defaults:
   - _self_
-  - train: GAN
+  - train: PSNR
   - models: default
