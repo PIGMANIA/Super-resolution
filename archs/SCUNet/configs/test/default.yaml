@@ -1,3 +1,0 @@
-common:
-  image_path: "/workspace/DL_Optimization/C++/TorchScript/examples/원본"
-  save_path: "results"
