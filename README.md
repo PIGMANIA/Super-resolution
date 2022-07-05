@@ -6,7 +6,7 @@
 ## Contents
 - [Features](#features)
 - [Usage](#usage)
-
+- [Citation](#citation)
 ## Features
 - Automated in training super-resolution using PSNR and GAN processes
 - Automated in testing super-resolution models for image and video
