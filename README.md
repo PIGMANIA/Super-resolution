@@ -33,6 +33,8 @@ configs/
 
 ### 2. A user should modify train.yaml or test.yaml in the config directory to Train or Test super-resolution model
 
+#### Train
+
 ```yaml
 ### train.yaml 
 ### A user should change model_name and train_type to train various models
@@ -48,6 +50,26 @@ defaults:
 ```
 
 ```yaml
+### PSNR or GAN.yaml
+
+### A user should specify train directory in datasets
+dataset:
+  train_dir: "datasets"
+```
+
+```yaml
+### model.yaml
+### A user should specify the path of checkpoint in order to resume your train
+generator:
+  path: ""
+
+discriminator:
+  path: ""
+```
+
+#### Test
+
+```yaml
 ### test.yaml 
 ### A user should change model_name and test_type to test various models
 
@@ -59,6 +81,13 @@ defaults:
   - _self_
   - test: ${test_type}
   - models: ${model_name}
+```
+
+```yaml
+### model.yaml
+### A user should specify the path of pre-trained to load weights, in order to inference your model
+generator:
+  path: ""
 ```
 
 ### 3. Run
