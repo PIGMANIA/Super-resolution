@@ -8,7 +8,7 @@
 - [Usage](#usage)
 
 ## Features
-- Automated super-resolution model train and test processes
+- Automated in training and testing for super-resolution models
 
 ## Usage
 
