@@ -1,14 +1,15 @@
 <a href="https://github.com/HeaseoChung/DL-Optimization/tree/master/Python/TensorRT/x86"><img src="https://img.shields.io/badge/-Documentation-brightgreen"/></a>
 
 # AutomaticSR
-- This repository helps to train and test various deep learning based super-resolution models with simply modifying confings.
+- This repository helps to train and test various deep learning based super-resolution models with simply modifying configs.
 
 ## Contents
 - [Features](#features)
 - [Usage](#usage)
 
 ## Features
-- Automated in training and testing for super-resolution models
+- Automated in training super-resolution using PSNR and GAN processes
+- Automated in testing super-resolution models for image and video
 
 ## Usage
 
