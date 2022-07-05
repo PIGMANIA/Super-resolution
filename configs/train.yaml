@@ -1,0 +1,8 @@
+hydra:
+  run:
+    dir: ./outputs/BSRGAN/train/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+defaults:
+  - _self_
+  - train: PSNR
+  - models: BSRGAN

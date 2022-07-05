@@ -1,0 +1,3 @@
+common:
+  image_path: "/workspace/SuperResolution/example/VanClah"
+  save_path: "results"
