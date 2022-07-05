@@ -1,8 +1,8 @@
 hydra:
   run:
-    dir: ./outputs/SCUNet/test/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ./outputs/SCUNET/test/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 defaults:
   - _self_
-  - test: default
-  - models: default
+  - test: image_test
+  - models: SCUNET

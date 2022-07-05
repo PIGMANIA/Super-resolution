@@ -1,3 +1,4 @@
 common:
+  type: "image"
   image_path: "/workspace/SuperResolution/example/lenna.png"
   save_path: "results"
