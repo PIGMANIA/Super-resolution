@@ -56,9 +56,9 @@ class Trainer:
         ### Initializer
         self._init_model(cfg.models)
         self._init_optim(cfg.train.optim)
-        self._init_scheduler(cfg.train.scheduler)
         self._init_loss(cfg.train.loss)
         self._load_state_dict(cfg.models)
+        self._init_scheduler(cfg.train.scheduler)
         self._init_dataset(cfg.train.dataset)
 
         ### Train
@@ -113,6 +113,8 @@ class Trainer:
                 self.num_iteration = ckpt["iteration"]
                 self.generator.load_state_dict(ckpt["g"])
                 self.g_optim.load_state_dict(ckpt["g_optim"])
+                self.start_iters = ckpt["iteration"] + 1
+                log.info(f"start_iters : {self.start_iters}")
             else:
                 self.generator.load_state_dict(ckpt)
         else:
