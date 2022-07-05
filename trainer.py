@@ -326,7 +326,7 @@ class Trainer:
             self.train_gan()
 
 
-@hydra.main(config_path="./archs/SCUNet/configs", config_name="train.yaml")
+@hydra.main(config_path="./configs/", config_name="train.yaml")
 def main(cfg):
     Trainer(cfg, 0)
 
