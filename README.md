@@ -1,6 +1,6 @@
 <a href="https://github.com/HeaseoChung/DL-Optimization/tree/master/Python/TensorRT/x86"><img src="https://img.shields.io/badge/-Documentation-brightgreen"/></a>
 
-# Super Resolution Trainer
+# AutomaticSR
 - This repository helps to train and test various deep learning based super-resolution models with simply modifying confings.
 
 ## Contents
@@ -71,4 +71,17 @@ CUDA_VISIBLE_DEVICES=0 python trainer.py
 ```python
 ### tester.py for test the models
 CUDA_VISIBLE_DEVICES=0 python tester.py
+```
+
+## Citation
+If the repository helps your research or work, please consider citing AutomaticSR.<br>
+The following is a BibTeX reference. The BibTeX entry requires the `url` LaTeX package.
+
+``` latex
+@misc{chung2022AutomaticSR,
+  author =       {Heaseo Chung},
+  title =        {{AutomaticSR}: Open source for various super-resolution trainer and tester},
+  howpublished = {\url{https://github.com/HeaseoChung/Super-resolution}},
+  year =         {2022}
+}
 ```
