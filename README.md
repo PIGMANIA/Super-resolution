@@ -13,7 +13,7 @@
 
 ## Usage
 
-### 1. The tree shows config directory in the repository
+### 1. The tree shows config directories in the repository
 ```
 configs/
 ├── models
