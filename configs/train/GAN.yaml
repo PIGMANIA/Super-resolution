@@ -1,5 +1,6 @@
 common:
   iteration: 800000
+  save_every: 10000
   seed: 123
   use_wandb: false
   ckpt_dir: "gan_cpkt"

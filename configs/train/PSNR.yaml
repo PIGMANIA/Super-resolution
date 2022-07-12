@@ -1,9 +1,11 @@
 common:
-  iteration: 100000
+  iteration: 10001
+  save_every: 1000
   seed: 123
   use_wandb: false
   ckpt_dir: "psnr_cpkt"
   GAN: false
+  
 
 loss:
   lists: ["MAE"]
@@ -31,7 +33,7 @@ scheduler:
 
 dataset:
   train_dir: "/dataset/SR/"
-  scale: 1
+  scale: 2
   batch_size: 8
   patch_size : 128
   num_workers: 4
@@ -49,7 +51,7 @@ dataset:
     use: false
   
   deg:
-    use: true
+    use: false
     shuffle_prob: 0.1
     updown_type: ["up", "down", "keep"]
     mode_list: ["area", "bilinear", "bicubic"]
