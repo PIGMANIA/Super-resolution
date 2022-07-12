@@ -12,7 +12,6 @@ class Dataset(Dataset):
     def __init__(self, cfg):
         self.patch_size = cfg.patch_size
         self.scale = cfg.scale
-
         self.aug = cfg.aug.use
 
         self.degradation = None
@@ -40,7 +39,12 @@ class Dataset(Dataset):
             crop_h = random.randint(0, height - self.patch_size)
 
             hr = hr.crop(
-                (crop_w, crop_h, crop_w + self.patch_size, crop_h + self.patch_size)
+                (
+                    crop_w,
+                    crop_h,
+                    crop_w + self.patch_size,
+                    crop_h + self.patch_size,
+                )
             )
 
             # rotate
@@ -51,6 +55,9 @@ class Dataset(Dataset):
         if self.degradation:
             # Degradation
             lr, hr = self.degradation.degradation_pipeline(hr)
+        else:
+            w, h = hr.size
+            lr = hr.resize((w // self.scale, h // self.scale), Image.CUBIC)
 
         return self.to_tensor(lr), self.to_tensor(hr)
 

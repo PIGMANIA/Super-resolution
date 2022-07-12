@@ -33,6 +33,7 @@ class Trainer:
         self.end_iters = cfg.train.common.iteration
         self.seed = cfg.train.common.seed
         self.use_wandb = cfg.train.common.use_wandb
+        self.save_every = cfg.train.common.save_every
 
         ### Model setting
         self.generator = None
@@ -73,7 +74,9 @@ class Trainer:
             if self.gan_train:
                 from archs.SCUNet.models import Discriminator
 
-                self.discriminator = Discriminator(model.discriminator).to(self.gpu)
+                self.discriminator = Discriminator(model.discriminator).to(
+                    self.gpu
+                )
 
         elif model.name.lower() == "realesrgan":
             from archs.RealESRGAN.models import Generator
@@ -83,7 +86,9 @@ class Trainer:
             if self.gan_train:
                 from archs.RealESRGAN.models import Discriminator
 
-                self.discriminator = Discriminator(model.discriminator).to(self.gpu)
+                self.discriminator = Discriminator(model.discriminator).to(
+                    self.gpu
+                )
 
         elif model.name.lower() == "bsrgan":
             from archs.BSRGAN.models import Generator
@@ -93,7 +98,9 @@ class Trainer:
             if self.gan_train:
                 from archs.BSRGAN.models import Discriminator
 
-                self.discriminator = Discriminator(model.discriminator).to(self.gpu)
+                self.discriminator = Discriminator(model.discriminator).to(
+                    self.gpu
+                )
 
         elif model.name.lower() == "edsr":
             from archs.EDSR.models import Generator
@@ -122,9 +129,12 @@ class Trainer:
         if self.gan_train:
             if model.discriminator.path:
                 log.info("Train the discriminator with checkpoint")
-                log.info(f"Loading the checkpoint from : {model.discriminator.path}")
+                log.info(
+                    f"Loading the checkpoint from : {model.discriminator.path}"
+                )
                 ckpt = torch.load(
-                    model.discriminator.path, map_location=lambda storage, loc: storage
+                    model.discriminator.path,
+                    map_location=lambda storage, loc: storage,
                 )
                 if len(ckpt) == 3:
                     self.num_iteration = ckpt["iteration"]
@@ -145,7 +155,9 @@ class Trainer:
 
             self.l1loss = nn.L1Loss().to(self.gpu)
             self.gan_loss = GANLoss(losses.GANLoss).to(self.gpu)
-            self.perceptual_loss = PerceptualLoss(losses.PerceptualLoss).to(self.gpu)
+            self.perceptual_loss = PerceptualLoss(losses.PerceptualLoss).to(
+                self.gpu
+            )
 
         log.info("Initialized the losses functions")
 
@@ -224,15 +236,19 @@ class Trainer:
             results = torch.cat(
                 (
                     hr.detach(),
-                    F.interpolate(lr, scale_factor=self.scale, mode="nearest").detach(),
+                    F.interpolate(
+                        lr, scale_factor=self.scale, mode="nearest"
+                    ).detach(),
                     preds.detach(),
                 ),
                 2,
             )
 
-            vutils.save_image(results, os.path.join(self.save_path, f"preds.jpg"))
+            vutils.save_image(
+                results, os.path.join(self.save_path, f"preds.jpg")
+            )
 
-            if i % 10000 == 0:
+            if i % self.save_every == 0:
                 torch.save(
                     {
                         "g": self.generator.state_dict(),
@@ -293,15 +309,19 @@ class Trainer:
             results = torch.cat(
                 (
                     hr.detach(),
-                    F.interpolate(lr, scale_factor=self.scale, mode="nearest").detach(),
+                    F.interpolate(
+                        lr, scale_factor=self.scale, mode="nearest"
+                    ).detach(),
                     preds.detach(),
                 ),
                 2,
             )
 
-            vutils.save_image(results, os.path.join(self.save_path, f"preds.jpg"))
+            vutils.save_image(
+                results, os.path.join(self.save_path, f"preds.jpg")
+            )
 
-            if i % 10000 == 0:
+            if i % self.save_every == 0:
                 torch.save(
                     {
                         "g": self.generator.state_dict(),
