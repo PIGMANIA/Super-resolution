@@ -7,7 +7,9 @@ class ResBlock(nn.Module):
         m = []
         for i in range(2):
             m.append(
-                nn.Conv2d(n_feats, n_feats, kernel_size=3, bias=True, padding=3 // 2)
+                nn.Conv2d(
+                    n_feats, n_feats, kernel_size=3, bias=True, padding=3 // 2
+                )
             )
             if i == 0:
                 m.append(nn.ReLU(True))
@@ -17,7 +19,7 @@ class ResBlock(nn.Module):
     def forward(self, x):
         res = self.body(x).mul(self.res_scale)
         res += x
-        return res * self.res_scale
+        return res
 
 
 class Generator(nn.Module):
@@ -30,7 +32,9 @@ class Generator(nn.Module):
         num_block = cfg.num_block
         res_scale = cfg.res_scale
 
-        self.head = nn.Conv2d(num_in_ch, num_feat, kernel_size=3, padding=3 // 2)
+        self.head = nn.Conv2d(
+            num_in_ch, num_feat, kernel_size=3, padding=3 // 2
+        )
         body = [ResBlock(num_feat, res_scale) for _ in range(num_block)]
         self.body = nn.Sequential(*body)
         self.tail = nn.Sequential(
