@@ -106,6 +106,11 @@ class Trainer:
             from archs.EDSR.models import Generator
 
             self.generator = Generator(model.generator).to(self.gpu)
+        
+        elif model.name.lower() == "swinir":
+            from archs.SwinIR.models import Generator
+
+            self.generator = Generator(model.generator).to(self.gpu)
 
         log.info("Initialized the model")
 
@@ -148,12 +153,16 @@ class Trainer:
         log.info("Initialized the checkpoints")
 
     def _init_loss(self, losses):
-        if not self.gan_train:
+        if losses.lists[0] == "MAE":
+            log.info("Loss for MAE")
             self.l1loss = nn.L1Loss().to(self.gpu)
-        else:
+        elif losses.lists[0] == "Charbonnier":
+            from loss import L1_Charbonnier_loss
+            log.info("Loss for Charbonnier")
+            self.l1loss = L1_Charbonnier_loss().to(self.gpu)
+        
+        if self.gan_train:
             from loss import GANLoss, PerceptualLoss
-
-            self.l1loss = nn.L1Loss().to(self.gpu)
             self.gan_loss = GANLoss(losses.GANLoss).to(self.gpu)
             self.perceptual_loss = PerceptualLoss(losses.PerceptualLoss).to(
                 self.gpu

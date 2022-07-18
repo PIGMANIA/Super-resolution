@@ -17,9 +17,8 @@ log = logging.getLogger("Tester")
 class Tester:
     def __init__(self, cfg, gpu):
         cudnn.benchmark = True
-
         self.gpu = gpu
-        self.scale = cfg.test.models.generator.scale
+        self.scale = cfg.models.generator.scale
         self.image_path = cfg.test.common.image_path
         self.save_path = cfg.test.common.save_path
         os.makedirs(self.save_path, exist_ok=True)
@@ -53,6 +52,13 @@ class Tester:
             from archs.EDSR.models import Generator
 
             self.generator = Generator(model.generator).to(self.gpu)
+        
+        elif model.name.lower() == "swinir":
+            from archs.SwinIR.models import Generator
+
+            self.generator = Generator(model.generator).to(self.gpu)
+
+        self.generator.eval()
 
     def _load_state_dict(self, model):
         if model.generator.path:
@@ -65,7 +71,6 @@ class Tester:
                 self.generator.load_state_dict(ckpt)
 
     def img_test(self):
-        self.generator.eval()
         images = []
 
         if os.path.isdir(self.image_path):
@@ -105,7 +110,6 @@ class Tester:
             "MXF",
         )
 
-        self.generator.eval()
         videos = []
 
         if os.path.isdir(self.image_path):
