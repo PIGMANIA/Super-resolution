@@ -5,6 +5,20 @@ import torchvision
 import torch.nn as nn
 
 
+class L1_Charbonnier_loss(nn.Module):
+    """L1 Charbonnierloss."""
+
+    def __init__(self):
+        super(L1_Charbonnier_loss, self).__init__()
+        self.eps = 1e-6
+
+    def forward(self, X, Y):
+        diff = torch.add(X, -Y)
+        error = torch.sqrt(diff * diff + self.eps)
+        loss = torch.sum(error)
+        return loss
+
+
 class GANLoss(nn.Module):
     def __init__(self, gan):
         super(GANLoss, self).__init__()
@@ -92,7 +106,9 @@ class PerceptualLoss(torch.nn.Module):
             param.requires_grad = False
         self.loss_weight = cfg.loss_weight
 
-    def forward(self, source: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, source: torch.Tensor, target: torch.Tensor
+    ) -> torch.Tensor:
         vgg_loss = torch.nn.functional.l1_loss(
             self.features(source), self.features(target)
         )
