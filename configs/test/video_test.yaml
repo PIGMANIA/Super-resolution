@@ -1,4 +1,0 @@
-common:
-  type: "video"
-  image_path: "/workspace/SuperResolution/example/Video.mp4"
-  save_path: "results"
