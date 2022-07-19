@@ -73,14 +73,24 @@ class DataPrepare:
         self.pulse_tensor[10, 10] = 1
 
     def data_pipeline(self, hr):
+        width, height = hr.size
+        crop_w = random.randint(0, width - self.patch_size)
+        crop_h = random.randint(0, height - self.patch_size)
+
+        hr = hr.crop(
+            (
+                crop_w,
+                crop_h,
+                crop_w + (self.patch_size * self.sf),
+                crop_h + (self.patch_size * self.sf),
+            )
+        )
         rotate = [0, 90, 180, 270]
         rotate = rotate[random.randint(0, len(rotate) - 1)]
         hr = hr.rotate(rotate)
 
         hr = uint2single(np.array(hr))
         lr = hr.copy()
-        lr, hr = self.random_crop(lr, hr, self.sf, self.patch_size)
-
         if self.sharpen:
             hr = self.add_sharpen(hr)
 
@@ -135,12 +145,11 @@ class DataPrepare:
                 lr = cv2.resize(
                     lr,
                     (
-                        int(1 / self.sf * hr.shape[1]),
-                        int(1 / self.sf * hr.shape[0]),
+                        self.patch_size,
+                        self.patch_size,
                     ),
                     interpolation=random.choice([1, 2, 3]),
                 )
-
             else:
                 shuffle_order = random.sample(range(7), 7)
                 idx1, idx2 = shuffle_order.index(2), shuffle_order.index(3)
@@ -226,16 +235,17 @@ class DataPrepare:
         """
         return self.fspecial_gaussian(hsize, sigma)
 
-    def random_crop(self, lr, hr, sf=4, patch_size=64):
+    def random_crop(self, lr, hr):
         h, w = lr.shape[:2]
-        rnd_h = random.randint(0, h - patch_size)
-        rnd_w = random.randint(0, w - patch_size)
-        lr = lr[rnd_h : rnd_h + patch_size, rnd_w : rnd_w + patch_size, :]
+        rnd_h = random.randint(0, h - self.patch_size * self.sf)
+        rnd_w = random.randint(0, w - self.patch_size * self.sf)
+        lr = lr[
+            rnd_h : rnd_h + self.patch_size, rnd_w : rnd_w + self.patch_size, :
+        ]
 
-        rnd_h_H, rnd_w_H = int(rnd_h * sf), int(rnd_w * sf)
         hr = hr[
-            rnd_h_H : rnd_h_H + patch_size * sf,
-            rnd_w_H : rnd_w_H + patch_size * sf,
+            rnd_h : rnd_h + (self.patch_size * self.sf),
+            rnd_w : rnd_w + (self.patch_size * self.sf),
             :,
         ]
         return lr, hr
