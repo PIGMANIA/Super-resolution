@@ -19,7 +19,8 @@ class DataPrepare:
         self.sf = cfg.scale
         self.patch_size = cfg.patch_size
         self.shuffle_prob = cfg.deg.shuffle_prob
-        self.num_deg = 9
+        self.num_deg = 4
+        self.num_deg_plus = 9
 
         # Sharpen
         self.sharpen = cfg.sharpen.use
@@ -81,10 +82,11 @@ class DataPrepare:
             (
                 crop_w,
                 crop_h,
-                crop_w + (self.patch_size * self.sf),
-                crop_h + (self.patch_size * self.sf),
+                crop_w + self.patch_size * self.sf,
+                crop_h + self.patch_size * self.sf,
             )
         )
+
         rotate = [0, 90, 180, 270]
         rotate = rotate[random.randint(0, len(rotate) - 1)]
         hr = hr.rotate(rotate)
@@ -98,17 +100,17 @@ class DataPrepare:
             if self.plus:
                 if random.random() < self.shuffle_prob:
                     shuffle_order = random.sample(
-                        range(self.num_deg), self.num_deg
+                        range(self.num_deg_plus), self.num_deg_plus
                     )
                 else:
-                    shuffle_order = list(range(self.num_deg))
+                    shuffle_order = list(range(self.num_deg_plus))
                     # local shuffle for noise, JPEG is always the last one
                     shuffle_order[2:4] = random.sample(
                         shuffle_order[2:4], len(range(2, 4))
                     )
-                    shuffle_order[7 : self.num_deg] = random.sample(
-                        shuffle_order[7 : self.num_deg],
-                        len(range(7, self.num_deg)),
+                    shuffle_order[7 : self.num_deg_plus] = random.sample(
+                        shuffle_order[7 : self.num_deg_plus],
+                        len(range(7, self.num_deg_plus)),
                     )
                 for i in shuffle_order:
                     ### first phase of degradation
@@ -142,16 +144,8 @@ class DataPrepare:
                     lr = self.add_JPEG_noise(lr)
                     lr = self.generate_sinc(lr)
 
-                lr = cv2.resize(
-                    lr,
-                    (
-                        self.patch_size,
-                        self.patch_size,
-                    ),
-                    interpolation=random.choice([1, 2, 3]),
-                )
             else:
-                shuffle_order = random.sample(range(7), 7)
+                shuffle_order = random.sample(range(self.num_deg), self.num_deg)
                 idx1, idx2 = shuffle_order.index(2), shuffle_order.index(3)
                 if idx1 > idx2:
                     shuffle_order[idx1], shuffle_order[idx2] = (
@@ -164,20 +158,8 @@ class DataPrepare:
                         lr = self.generate_kernel1(lr)
 
                     elif i == 1:
-                        lr = self.generate_kernel1(lr)
-
-                    elif i == 2:
-                        a, b = lr.shape[1], lr.shape[0]
                         if random.random() < 0.75:
-                            sf1 = random.uniform(1, 2 * self.sf)
-                            lr = cv2.resize(
-                                lr,
-                                (
-                                    int(1 / sf1 * lr.shape[1]),
-                                    int(1 / sf1 * lr.shape[0]),
-                                ),
-                                interpolation=random.choice([1, 2, 3]),
-                            )
+                            lr = self.random_resizing(lr)
                         else:
                             k = self.fspecial(
                                 25, random.uniform(0.1, 0.6 * self.sf)
@@ -190,24 +172,29 @@ class DataPrepare:
                                 mode="mirror",
                             )
                             lr = lr[0 :: self.sf, 0 :: self.sf, ...]
-                        lr = np.clip(lr, 0.0, 1.0)
+
+                            lr = np.clip(lr, 0.0, 1.0)
+
+                    elif i == 2:
+                        lr = self.add_Poisson_noise(lr)
 
                     elif i == 3:
-                        lr = cv2.resize(
-                            lr,
-                            (int(1 / self.sf * a), int(1 / self.sf * b)),
-                            interpolation=random.choice([1, 2, 3]),
-                        )
-                        lr = np.clip(lr, 0.0, 1.0)
-
-                    elif i == 4:
                         lr = self.add_Gaussian_noise(lr)
 
-                    elif i == 5:
-                        if random.random() < self.jpeg_prob:
-                            lr = self.add_JPEG_noise(lr)
+                    elif i == 4:
+                        lr = self.add_speckle_noise(lr)
 
-                lr = lr = self.add_JPEG_noise(lr)
+                if random.random() < self.jpeg_prob:
+                    lr = self.add_JPEG_noise(lr)
+
+        lr = cv2.resize(
+            lr,
+            (
+                self.patch_size,
+                self.patch_size,
+            ),
+            interpolation=random.choice([1, 2, 3]),
+        )
 
         lr = single2uint(lr)
         hr = single2uint(hr)
@@ -234,21 +221,6 @@ class DataPrepare:
         https://github.com/ronaldosena/imagens-medicas-2/blob/40171a6c259edec7827a6693a93955de2bd39e76/Aulas/aula_2_-_uniform_filter/matlab_fspecial.py
         """
         return self.fspecial_gaussian(hsize, sigma)
-
-    def random_crop(self, lr, hr):
-        h, w = lr.shape[:2]
-        rnd_h = random.randint(0, h - self.patch_size * self.sf)
-        rnd_w = random.randint(0, w - self.patch_size * self.sf)
-        lr = lr[
-            rnd_h : rnd_h + self.patch_size, rnd_w : rnd_w + self.patch_size, :
-        ]
-
-        hr = hr[
-            rnd_h : rnd_h + (self.patch_size * self.sf),
-            rnd_w : rnd_w + (self.patch_size * self.sf),
-            :,
-        ]
-        return lr, hr
 
     def shift_pixel(self, x, sf, upper_left=True):
         h, w = x.shape[:2]

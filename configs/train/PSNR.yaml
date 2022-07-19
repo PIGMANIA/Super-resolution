@@ -1,5 +1,5 @@
 common:
-  iteration: 100001
+  iteration: 800001
   save_every: 10000
   seed: 123
   use_wandb: false
@@ -8,7 +8,7 @@ common:
   
 
 loss:
-  lists: ["Charbonnier"]
+  lists: ["MAE"]
   GANLoss:
     real_label_val: 1.0
     fake_label_val: 0.0
@@ -28,18 +28,15 @@ optim:
   
 scheduler:
   type: MultiStepLR
-  milestones: [50000]
+  milestones: [400000]
   gamma: 0.5
 
 dataset:
   train_dir: "/dataset/SR/"
-  scale: 1
+  scale: 2
   batch_size: 8
   patch_size : 128
   num_workers: 4
-  
-  aug:
-    use: true
 
   sharpen:
     use: false
@@ -49,7 +46,7 @@ dataset:
   
   deg:
     use: true
-    plus: true
+    plus: false
     jpeg_prob: 0.9
     shuffle_prob: 0.1
     updown_type: ["up", "down", "keep"]

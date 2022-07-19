@@ -37,9 +37,6 @@ dataset:
   patch_size : 128
   num_workers: 4
   
-  aug:
-    use: true
-
   sharpen:
     use: true
     weight: 0.15
