@@ -4,9 +4,18 @@
 - This repository helps to train and test various deep learning based super-resolution models with simply modifying configs.
 
 ## Contents
+- [Models](#models)
 - [Features](#features)
 - [Usage](#usage)
 - [Citation](#citation)
+
+## Models
+- BSRGAN
+- EDSR
+- Real-ESRGAN
+- SCUNET (Added upsampler in the tail for super-resolution)
+- SwinIR
+
 ## Features
 - Automated in training super-resolution using PSNR and GAN processes
 - Automated in testing super-resolution models for image and video
