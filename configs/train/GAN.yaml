@@ -7,7 +7,7 @@ common:
   GAN: true
 
 loss:
-  lists: ["MAE", "GANLoss", "PerceptualLoss"]
+  lists: ["Charbonnier", "GANLoss", "PerceptualLoss"]
   GANLoss:
     real_label_val: 1.0
     fake_label_val: 0.0
@@ -46,11 +46,10 @@ dataset:
     radius: 50
     threshold: 10
 
-  clahe:
-    use: false
-
   deg:
     use: true
+    plus: true
+    jpeg_prob: 0.9
     shuffle_prob: 0.1
     updown_type: ["up", "down", "keep"]
     mode_list: ["area", "bilinear", "bicubic"]

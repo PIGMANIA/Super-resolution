@@ -4,6 +4,8 @@ import cv2
 import math
 import torch
 
+import scipy
+from scipy.interpolate import interp2d
 from scipy import special
 from scipy import ndimage
 from scipy.stats import multivariate_normal
@@ -12,21 +14,22 @@ from scipy.linalg import orth
 from utils import uint2single, single2uint
 
 
-class Degradation:
+class DataPrepare:
     def __init__(self, cfg):
         self.sf = cfg.scale
+        self.patch_size = cfg.patch_size
         self.shuffle_prob = cfg.deg.shuffle_prob
         self.num_deg = 9
 
         # Sharpen
         self.sharpen = cfg.sharpen.use
-        self.clahe = cfg.clahe.use
         self.sharpen_weight = cfg.sharpen.weight
         self.sharpen_radius = cfg.sharpen.radius
         self.sharpen_threshold = cfg.sharpen.threshold
 
         """ degradation """
         self.deg = cfg.deg.use
+        self.plus = cfg.deg.plus
 
         # Sinc
         self.sinc_prob = cfg.deg.sinc_prob
@@ -59,74 +62,205 @@ class Degradation:
         self.noise_level1 = cfg.deg.noise_level1  # 2
         self.noise_level2 = cfg.deg.noise_level2  # 25
 
+        # JPEG
+        self.jpeg_prob = cfg.deg.jpeg_prob
+        self.jpeg_range = cfg.deg.jpeg_range
+
         # Sinc
         self.pulse_tensor = torch.zeros(
             21, 21
         ).float()  # convolving with pulse tensor brings no blurry effect
         self.pulse_tensor[10, 10] = 1
 
-    def degradation_pipeline(self, hr):
+    def data_pipeline(self, hr):
+        rotate = [0, 90, 180, 270]
+        rotate = rotate[random.randint(0, len(rotate) - 1)]
+        hr = hr.rotate(rotate)
+
         hr = uint2single(np.array(hr))
         lr = hr.copy()
-
-        if self.clahe:
-            hr = self.add_clahe(hr)
+        lr, hr = self.random_crop(lr, hr, self.sf, self.patch_size)
 
         if self.sharpen:
             hr = self.add_sharpen(hr)
 
-        if random.random() < self.shuffle_prob:
-            shuffle_order = random.sample(range(self.num_deg), self.num_deg)
-        else:
-            shuffle_order = list(range(self.num_deg))
-            # local shuffle for noise, JPEG is always the last one
-            shuffle_order[2:4] = random.sample(shuffle_order[2:4], len(range(2, 4)))
-            shuffle_order[7 : self.num_deg] = random.sample(
-                shuffle_order[7 : self.num_deg], len(range(7, self.num_deg))
-            )
-
         if self.deg:
-            for i in shuffle_order:
-                ### first phase of degradation
-                if i == 0:
-                    lr = self.generate_kernel1(lr)
-                elif i == 1:
-                    lr = self.random_resizing(lr)
-                elif i == 2:
-                    lr = self.add_Poisson_noise(lr)
-                elif i == 3:
-                    lr = self.add_Gaussian_noise(lr)
-                elif i == 4:
-                    lr = self.add_speckle_noise(lr)
+            if self.plus:
+                if random.random() < self.shuffle_prob:
+                    shuffle_order = random.sample(
+                        range(self.num_deg), self.num_deg
+                    )
+                else:
+                    shuffle_order = list(range(self.num_deg))
+                    # local shuffle for noise, JPEG is always the last one
+                    shuffle_order[2:4] = random.sample(
+                        shuffle_order[2:4], len(range(2, 4))
+                    )
+                    shuffle_order[7 : self.num_deg] = random.sample(
+                        shuffle_order[7 : self.num_deg],
+                        len(range(7, self.num_deg)),
+                    )
+                for i in shuffle_order:
+                    ### first phase of degradation
+                    if i == 0:
+                        lr = self.generate_kernel1(lr)
+                    elif i == 1:
+                        lr = self.random_resizing(lr)
+                    elif i == 2:
+                        lr = self.add_Poisson_noise(lr)
+                    elif i == 3:
+                        lr = self.add_Gaussian_noise(lr)
+                    elif i == 4:
+                        lr = self.add_speckle_noise(lr)
 
-                ### second phase of degradation
-                elif i == 5:
-                    lr = self.generate_kernel2(lr)
-                elif i == 6:
-                    lr = self.random_resizing2(lr)
-                elif i == 7:
-                    lr = self.add_Poisson_noise(lr)
-                elif i == 8:
-                    lr = self.add_Gaussian_noise(lr)
-                elif i == 9:
-                    lr = self.add_speckle_noise(lr)
+                    ### second phase of degradation
+                    elif i == 5:
+                        lr = self.generate_kernel2(lr)
+                    elif i == 6:
+                        lr = self.random_resizing2(lr)
+                    elif i == 7:
+                        lr = self.add_Poisson_noise(lr)
+                    elif i == 8:
+                        lr = self.add_Gaussian_noise(lr)
+                    elif i == 9:
+                        lr = self.add_speckle_noise(lr)
 
-            if np.random.uniform() < 0.5:
-                lr = self.generate_sinc(lr)
-                lr = self.add_JPEG_noise(lr)
+                if np.random.uniform() < 0.5:
+                    lr = self.generate_sinc(lr)
+                    lr = self.add_JPEG_noise(lr)
+                else:
+                    lr = self.add_JPEG_noise(lr)
+                    lr = self.generate_sinc(lr)
+
+                lr = cv2.resize(
+                    lr,
+                    (
+                        int(1 / self.sf * hr.shape[1]),
+                        int(1 / self.sf * hr.shape[0]),
+                    ),
+                    interpolation=random.choice([1, 2, 3]),
+                )
+
             else:
-                lr = self.add_JPEG_noise(lr)
-                lr = self.generate_sinc(lr)
+                shuffle_order = random.sample(range(7), 7)
+                idx1, idx2 = shuffle_order.index(2), shuffle_order.index(3)
+                if idx1 > idx2:
+                    shuffle_order[idx1], shuffle_order[idx2] = (
+                        shuffle_order[idx2],
+                        shuffle_order[idx1],
+                    )
 
-        lr = cv2.resize(
-            lr,
-            (int(1 / self.sf * hr.shape[1]), int(1 / self.sf * hr.shape[0])),
-            interpolation=random.choice([1, 2, 3]),
-        )
+                for i in shuffle_order:
+                    if i == 0:
+                        lr = self.generate_kernel1(lr)
+
+                    elif i == 1:
+                        lr = self.generate_kernel1(lr)
+
+                    elif i == 2:
+                        a, b = lr.shape[1], lr.shape[0]
+                        if random.random() < 0.75:
+                            sf1 = random.uniform(1, 2 * self.sf)
+                            lr = cv2.resize(
+                                lr,
+                                (
+                                    int(1 / sf1 * lr.shape[1]),
+                                    int(1 / sf1 * lr.shape[0]),
+                                ),
+                                interpolation=random.choice([1, 2, 3]),
+                            )
+                        else:
+                            k = self.fspecial(
+                                25, random.uniform(0.1, 0.6 * self.sf)
+                            )
+                            k_shifted = self.shift_pixel(k, self.sf)
+                            k_shifted = k_shifted / k_shifted.sum()
+                            lr = ndimage.filters.convolve(
+                                lr,
+                                np.expand_dims(k_shifted, axis=2),
+                                mode="mirror",
+                            )
+                            lr = lr[0 :: self.sf, 0 :: self.sf, ...]
+                        lr = np.clip(lr, 0.0, 1.0)
+
+                    elif i == 3:
+                        lr = cv2.resize(
+                            lr,
+                            (int(1 / self.sf * a), int(1 / self.sf * b)),
+                            interpolation=random.choice([1, 2, 3]),
+                        )
+                        lr = np.clip(lr, 0.0, 1.0)
+
+                    elif i == 4:
+                        lr = self.add_Gaussian_noise(lr)
+
+                    elif i == 5:
+                        if random.random() < self.jpeg_prob:
+                            lr = self.add_JPEG_noise(lr)
+
+                lr = lr = self.add_JPEG_noise(lr)
 
         lr = single2uint(lr)
         hr = single2uint(hr)
         return lr, hr
+
+    def fspecial_gaussian(self, hsize, sigma):
+        hsize = [hsize, hsize]
+        siz = [(hsize[0] - 1.0) / 2.0, (hsize[1] - 1.0) / 2.0]
+        std = sigma
+        [x, y] = np.meshgrid(
+            np.arange(-siz[1], siz[1] + 1), np.arange(-siz[0], siz[0] + 1)
+        )
+        arg = -(x * x + y * y) / (2 * std * std)
+        h = np.exp(arg)
+        h[h < scipy.finfo(float).eps * h.max()] = 0
+        sumh = h.sum()
+        if sumh != 0:
+            h = h / sumh
+        return h
+
+    def fspecial(self, hsize, sigma):
+        """
+        python code from:
+        https://github.com/ronaldosena/imagens-medicas-2/blob/40171a6c259edec7827a6693a93955de2bd39e76/Aulas/aula_2_-_uniform_filter/matlab_fspecial.py
+        """
+        return self.fspecial_gaussian(hsize, sigma)
+
+    def random_crop(self, lr, hr, sf=4, patch_size=64):
+        h, w = lr.shape[:2]
+        rnd_h = random.randint(0, h - patch_size)
+        rnd_w = random.randint(0, w - patch_size)
+        lr = lr[rnd_h : rnd_h + patch_size, rnd_w : rnd_w + patch_size, :]
+
+        rnd_h_H, rnd_w_H = int(rnd_h * sf), int(rnd_w * sf)
+        hr = hr[
+            rnd_h_H : rnd_h_H + patch_size * sf,
+            rnd_w_H : rnd_w_H + patch_size * sf,
+            :,
+        ]
+        return lr, hr
+
+    def shift_pixel(self, x, sf, upper_left=True):
+        h, w = x.shape[:2]
+        shift = (sf - 1) * 0.5
+        xv, yv = np.arange(0, w, 1.0), np.arange(0, h, 1.0)
+        if upper_left:
+            x1 = xv + shift
+            y1 = yv + shift
+        else:
+            x1 = xv - shift
+            y1 = yv - shift
+
+        x1 = np.clip(x1, 0, w - 1)
+        y1 = np.clip(y1, 0, h - 1)
+
+        if x.ndim == 2:
+            x = interp2d(xv, yv, x)(x1, y1)
+        if x.ndim == 3:
+            for i in range(x.shape[-1]):
+                x[:, :, i] = interp2d(xv, yv, x[:, :, i])(x1, y1)
+
+        return x
 
     def random_resizing(self, image):
         h, w, c = image.shape
@@ -148,7 +282,9 @@ class Degradation:
         elif mode == "bicubic":
             flags = cv2.INTER_CUBIC
 
-        image = cv2.resize(image, (int(w * scale), int(h * scale)), interpolation=flags)
+        image = cv2.resize(
+            image, (int(w * scale), int(h * scale)), interpolation=flags
+        )
         return image
 
     def random_resizing2(self, image):
@@ -170,7 +306,9 @@ class Degradation:
         elif mode == "bicubic":
             flags = cv2.INTER_CUBIC
 
-        image = cv2.resize(image, (int(w * scale), int(h * scale)), interpolation=flags)
+        image = cv2.resize(
+            image, (int(w * scale), int(h * scale)), interpolation=flags
+        )
         return image
 
     def random_mixed_kernels(
@@ -289,7 +427,9 @@ class Degradation:
         sigma_x = np.random.uniform(sigma_x_range[0], sigma_x_range[1])
         if isotropic is False:
             assert sigma_y_range[0] < sigma_y_range[1], "Wrong sigma_y_range."
-            assert rotation_range[0] < rotation_range[1], "Wrong rotation_range."
+            assert (
+                rotation_range[0] < rotation_range[1]
+            ), "Wrong rotation_range."
             sigma_y = np.random.uniform(sigma_y_range[0], sigma_y_range[1])
             rotation = np.random.uniform(rotation_range[0], rotation_range[1])
         else:
@@ -303,7 +443,9 @@ class Degradation:
         # add multiplicative noise
         if noise_range is not None:
             assert noise_range[0] < noise_range[1], "Wrong noise range."
-            noise = np.random.uniform(noise_range[0], noise_range[1], size=kernel.shape)
+            noise = np.random.uniform(
+                noise_range[0], noise_range[1], size=kernel.shape
+            )
             kernel = kernel * noise
         kernel = kernel / np.sum(kernel)
         return kernel
@@ -336,7 +478,9 @@ class Degradation:
         sigma_x = np.random.uniform(sigma_x_range[0], sigma_x_range[1])
         if isotropic is False:
             assert sigma_y_range[0] < sigma_y_range[1], "Wrong sigma_y_range."
-            assert rotation_range[0] < rotation_range[1], "Wrong rotation_range."
+            assert (
+                rotation_range[0] < rotation_range[1]
+            ), "Wrong rotation_range."
             sigma_y = np.random.uniform(sigma_y_range[0], sigma_y_range[1])
             rotation = np.random.uniform(rotation_range[0], rotation_range[1])
         else:
@@ -356,7 +500,9 @@ class Degradation:
         # add multiplicative noise
         if noise_range is not None:
             assert noise_range[0] < noise_range[1], "Wrong noise range."
-            noise = np.random.uniform(noise_range[0], noise_range[1], size=kernel.shape)
+            noise = np.random.uniform(
+                noise_range[0], noise_range[1], size=kernel.shape
+            )
             kernel = kernel * noise
         kernel = kernel / np.sum(kernel)
         return kernel
@@ -389,7 +535,9 @@ class Degradation:
         sigma_x = np.random.uniform(sigma_x_range[0], sigma_x_range[1])
         if isotropic is False:
             assert sigma_y_range[0] < sigma_y_range[1], "Wrong sigma_y_range."
-            assert rotation_range[0] < rotation_range[1], "Wrong rotation_range."
+            assert (
+                rotation_range[0] < rotation_range[1]
+            ), "Wrong rotation_range."
             sigma_y = np.random.uniform(sigma_y_range[0], sigma_y_range[1])
             rotation = np.random.uniform(rotation_range[0], rotation_range[1])
         else:
@@ -408,7 +556,9 @@ class Degradation:
         # add multiplicative noise
         if noise_range is not None:
             assert noise_range[0] < noise_range[1], "Wrong noise range."
-            noise = np.random.uniform(noise_range[0], noise_range[1], size=kernel.shape)
+            noise = np.random.uniform(
+                noise_range[0], noise_range[1], size=kernel.shape
+            )
             kernel = kernel * noise
         kernel = kernel / np.sum(kernel)
 
@@ -519,14 +669,16 @@ class Degradation:
             * special.j1(
                 cutoff
                 * np.sqrt(
-                    (x - (kernel_size - 1) / 2) ** 2 + (y - (kernel_size - 1) / 2) ** 2
+                    (x - (kernel_size - 1) / 2) ** 2
+                    + (y - (kernel_size - 1) / 2) ** 2
                 )
             )
             / (
                 2
                 * np.pi
                 * np.sqrt(
-                    (x - (kernel_size - 1) / 2) ** 2 + (y - (kernel_size - 1) / 2) ** 2
+                    (x - (kernel_size - 1) / 2) ** 2
+                    + (y - (kernel_size - 1) / 2) ** 2
                 )
             ),
             [kernel_size, kernel_size],
@@ -537,7 +689,9 @@ class Degradation:
         kernel = kernel / np.sum(kernel)
         if pad_to > kernel_size:
             pad_size = (pad_to - kernel_size) // 2
-            kernel = np.pad(kernel, ((pad_size, pad_size), (pad_size, pad_size)))
+            kernel = np.pad(
+                kernel, ((pad_size, pad_size), (pad_size, pad_size))
+            )
         return kernel
 
     def mesh_grid(self, kernel_size):
@@ -582,7 +736,9 @@ class Degradation:
             ndarray: Rotated sigma matrix.
         """
         D = np.array([[sig_x**2, 0], [0, sig_y**2]])
-        U = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+        U = np.array(
+            [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]
+        )
         return np.dot(U, np.dot(D, U.T))
 
     def generate_kernel1(self, image):
@@ -593,7 +749,9 @@ class Degradation:
                 omega_c = np.random.uniform(np.pi / 3, np.pi)
             else:
                 omega_c = np.random.uniform(np.pi / 5, np.pi)
-            kernel = self.circular_lowpass_kernel(omega_c, kernel_size, pad_to=False)
+            kernel = self.circular_lowpass_kernel(
+                omega_c, kernel_size, pad_to=False
+            )
         else:
             kernel = self.random_mixed_kernels(
                 self.kernel_list,
@@ -623,7 +781,9 @@ class Degradation:
                 omega_c = np.random.uniform(np.pi / 3, np.pi)
             else:
                 omega_c = np.random.uniform(np.pi / 5, np.pi)
-            kernel2 = self.circular_lowpass_kernel(omega_c, kernel_size, pad_to=False)
+            kernel2 = self.circular_lowpass_kernel(
+                omega_c, kernel_size, pad_to=False
+            )
         else:
             kernel2 = self.random_mixed_kernels(
                 self.kernel_list2,
@@ -646,19 +806,6 @@ class Degradation:
         )
         return image.clip(min=0, max=255)
 
-    def add_clahe(self, img):
-        img = single2uint(img)
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        l = clahe.apply(l)
-
-        lab = cv2.merge((l, a, b))
-        img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-        img = uint2single(img)
-        return img
-
     def add_sharpen(self, img):
         """USM sharpening. borrowed from real-ESRGAN
         Input image: I; Blurry image: B.
@@ -674,7 +821,9 @@ class Degradation:
         """
         if self.sharpen_radius % 2 == 0:
             self.sharpen_radius += 1
-        blur = cv2.GaussianBlur(img, (self.sharpen_radius, self.sharpen_radius), 0)
+        blur = cv2.GaussianBlur(
+            img, (self.sharpen_radius, self.sharpen_radius), 0
+        )
         residual = img - blur
         mask = np.abs(residual) * 255 > self.sharpen_threshold
         mask = mask.astype("float32")
@@ -692,7 +841,7 @@ class Degradation:
         # return img
 
     def add_JPEG_noise(self, img):
-        quality_factor = random.randint(30, 95)
+        quality_factor = random.randint(self.jpeg_range[0], self.jpeg_range[1])
         img = cv2.cvtColor(single2uint(img), cv2.COLOR_RGB2BGR)
         result, encimg = cv2.imencode(
             ".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), quality_factor]
@@ -709,9 +858,9 @@ class Degradation:
                 np.float32
             )
         elif rnum < 0.4:  # add grayscale Gaussian noise
-            img += np.random.normal(0, noise_level / 255.0, (*img.shape[:2], 1)).astype(
-                np.float32
-            )
+            img += np.random.normal(
+                0, noise_level / 255.0, (*img.shape[:2], 1)
+            ).astype(np.float32)
         else:  # add  noise
             L = self.noise_level2 / 255.0
             D = np.diag(np.random.rand(3))
@@ -728,9 +877,9 @@ class Degradation:
         img = np.clip(img, 0.0, 1.0)
         rnum = random.random()
         if rnum > 0.6:
-            img += img * np.random.normal(0, noise_level / 255.0, img.shape).astype(
-                np.float32
-            )
+            img += img * np.random.normal(
+                0, noise_level / 255.0, img.shape
+            ).astype(np.float32)
         elif rnum < 0.4:
             img += img * np.random.normal(
                 0, noise_level / 255.0, (*img.shape[:2], 1)
@@ -754,7 +903,8 @@ class Degradation:
             img_gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
             img_gray = np.clip((img_gray * 255.0).round(), 0, 255) / 255.0
             noise_gray = (
-                np.random.poisson(img_gray * vals).astype(np.float32) / vals - img_gray
+                np.random.poisson(img_gray * vals).astype(np.float32) / vals
+                - img_gray
             )
             img += noise_gray[:, :, np.newaxis]
         img = np.clip(img, 0.0, 1.0)

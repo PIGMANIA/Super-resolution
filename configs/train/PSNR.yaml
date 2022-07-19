@@ -1,6 +1,6 @@
 common:
-  iteration: 10001
-  save_every: 1000
+  iteration: 100001
+  save_every: 10000
   seed: 123
   use_wandb: false
   ckpt_dir: "psnr_cpkt"
@@ -8,7 +8,7 @@ common:
   
 
 loss:
-  lists: ["MAE"]
+  lists: ["Charbonnier"]
   GANLoss:
     real_label_val: 1.0
     fake_label_val: 0.0
@@ -33,7 +33,7 @@ scheduler:
 
 dataset:
   train_dir: "/dataset/SR/"
-  scale: 2
+  scale: 1
   batch_size: 8
   patch_size : 128
   num_workers: 4
@@ -42,16 +42,15 @@ dataset:
     use: true
 
   sharpen:
-    use: true
-    weight: 0.15
+    use: false
+    weight: 1.0
     radius: 50
     threshold: 10
-
-  clahe:
-    use: false
   
   deg:
-    use: false
+    use: true
+    plus: true
+    jpeg_prob: 0.9
     shuffle_prob: 0.1
     updown_type: ["up", "down", "keep"]
     mode_list: ["area", "bilinear", "bicubic"]
