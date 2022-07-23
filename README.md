@@ -4,7 +4,7 @@
 - This repository helps to train and test various deep learning based super-resolution models by changing few configurations(.yaml)
 
 ## Contents
-- [News](#updates)
+- [Updates](#updates)
 - [Models](#models)
 - [Features](#features)
 - [Usage](#usage)
