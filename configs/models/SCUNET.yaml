@@ -1,9 +1,9 @@
 name: SCUNet
 
 generator:
-  path: "/workspace/SuperResolution/outputs/SCUNet/train/2022-07-04/00-07-57/gan_cpkt/g_260000.pth"
+  path: ""
   state_dict: ["g", "g_optim", "iteration"]
-  scale: 1
+  scale: 2
   in_nc: 3
   config: [4, 4, 4, 4, 4, 4, 4]
   dim: 64
@@ -11,9 +11,10 @@ generator:
   window_size: 8
   drop_path_rate: 0.0
   input_resolution: 256
+  upsampler: "nearest+conv"
 
 discriminator:
-  path: "/workspace/SuperResolution/outputs/SCUNet/train/2022-07-04/00-07-57/gan_cpkt/d_260000.pth"
+  path: ""
   state_dict: ["d", "d_optim", "iteration"]
   num_in_ch: 3
   num_feat: 64
