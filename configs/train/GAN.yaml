@@ -1,10 +1,21 @@
 common:
   iteration: 800000
-  save_every: 10000
+  save_img_every: 1
+  save_model_every: 10000
   seed: 123
   use_wandb: false
   ckpt_dir: "gan_cpkt"
   GAN: true
+
+ddp:
+  distributed: false
+  nodes: 1
+  gpus: 0
+  nr: 0
+  rank: 0
+  world_size: 1
+  dist_url: "tcp://localhost:12355"
+  dist_backend: "nccl"
 
 loss:
   lists: ["Charbonnier", "GANLoss", "PerceptualLoss"]

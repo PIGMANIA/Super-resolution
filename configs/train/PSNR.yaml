@@ -1,11 +1,21 @@
 common:
   iteration: 800001
-  save_every: 10000
+  save_img_every: 100
+  save_model_every: 10000
   seed: 123
   use_wandb: false
   ckpt_dir: "psnr_cpkt"
   GAN: false
-  
+
+ddp:
+  distributed: false
+  nodes: 1
+  gpus: 0
+  nr: 0
+  rank: 0
+  world_size: 1
+  dist_url: "tcp://localhost:12355"
+  dist_backend: "nccl"
 
 loss:
   lists: ["MAE"]
@@ -20,16 +30,16 @@ loss:
 optim:
   type: "Adam"
   Adam:
-    lr: 0.0002
+    lr: 1e-4
     betas: [0.9, 0.999]
-    eps: 1e-08
     weight_decay: 0
-    amsgrad: false
   
 scheduler:
   type: MultiStepLR
-  milestones: [400000]
-  gamma: 0.5
+  g_milestones: [200000, 400000, 600000, 800000, 1000000, 2000000]
+  d_milestones: [200000, 400000, 600000, 800000, 1000000, 2000000]
+  g_gamma: 0.5
+  d_gamma: 0.5
 
 dataset:
   train_dir: "/dataset/SR/"
@@ -46,7 +56,7 @@ dataset:
   
   deg:
     use: true
-    plus: false
+    plus: true
     jpeg_prob: 0.9
     shuffle_prob: 0.1
     updown_type: ["up", "down", "keep"]
