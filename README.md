@@ -111,12 +111,15 @@ generator:
 ### 3. Run
 
 ```python
-### trainer.py for train the models
+### trainer.py for train a model using single GPU
 CUDA_VISIBLE_DEVICES=0 python trainer.py
+
+### trainer.py for train a model using single GPU
+CUDA_VISIBLE_DEVICES=0,1,2,3 python trainer.py
 ```
 
 ```python
-### tester.py for test the models
+### tester.py for test a model
 CUDA_VISIBLE_DEVICES=0 python tester.py
 ```
 
