@@ -114,7 +114,7 @@ generator:
 ### trainer.py for train a model using single GPU
 CUDA_VISIBLE_DEVICES=0 python trainer.py
 
-### trainer.py for train a model using single GPU
+### trainer.py for train a model using multiple GPUs
 CUDA_VISIBLE_DEVICES=0,1,2,3 python trainer.py
 ```
 
