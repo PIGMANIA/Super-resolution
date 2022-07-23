@@ -1,19 +1,26 @@
 <a href="https://github.com/HeaseoChung/DL-Optimization/tree/master/Python/TensorRT/x86"><img src="https://img.shields.io/badge/-Documentation-brightgreen"/></a>
 
 # AutomaticSR
-- This repository helps to train and test various deep learning based super-resolution models with simply modifying configs.
+- This repository helps to train and test various deep learning based super-resolution models by changing few configurations(.yaml)
 
 ## Contents
+- [News](#updates)
 - [Models](#models)
 - [Features](#features)
 - [Usage](#usage)
 - [Citation](#citation)
 
+## Updates
+- **_News (2022-07-23)_**: Implemented multi-gpus train approach using pytorch distributed data parallel
+- **_News (2022-07-19)_**: Implemented upsampler module at end of Scunet model
+- **_News (2022-07-05)_**: Implemented test codes for video and image
+- **_News (2022-07-02)_**: Implemented train codes for super-resolution models such as EDSR, BSRGAN, RealESRGAN, SwinIR and SCUnet
+
 ## Models
 - BSRGAN
 - EDSR
 - Real-ESRGAN
-- SCUNET (Added upsampler in the tail for super-resolution)
+- SCUNET
 - SwinIR
 
 ## Features
@@ -30,9 +37,10 @@ configs/
 │   ├── EDSR.yaml
 │   ├── RealESRGAN.yaml
 │   └── SCUNET.yaml
+│   └── SwinIR.yaml
 ├── test
-│   ├── image_test.yaml
-│   └── video_test.yaml
+│   ├── image.yaml
+│   └── video.yaml
 ├── train
 │   ├── GAN.yaml
 │   └── PSNR.yaml
@@ -51,12 +59,12 @@ configs/
 
 hydra:
   run:
-    dir: ./outputs/${model_name}/train/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ./outputs/train/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 defaults:
   - _self_
-  - train: ${train_type}
-  - models: ${model_name}
+  - train: train_type # PSNR, GAN
+  - models: model_name # EDSR
 ```
 
 ```yaml
@@ -64,17 +72,17 @@ defaults:
 
 ### A user should specify train directory in datasets
 dataset:
-  train_dir: "datasets"
+  train_dir: datasets_path # /datasets/train
 ```
 
 ```yaml
 ### model.yaml
 ### A user should specify the path of checkpoint in order to resume your train
 generator:
-  path: ""
+  path: "" # /model_zoo/edsr.pth
 
 discriminator:
-  path: ""
+  path: "" # /model_zoo/discriminator.pth
 ```
 
 #### Test
@@ -85,19 +93,19 @@ discriminator:
 
 hydra:
   run:
-    dir: ./outputs/${model_name}/test/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ./outputs/test/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 defaults:
   - _self_
-  - test: ${test_type}
-  - models: ${model_name}
+  - test: test_type # image, video
+  - models: model_name # EDSR
 ```
 
 ```yaml
 ### model.yaml
 ### A user should specify the path of pre-trained to load weights, in order to inference your model
 generator:
-  path: ""
+  path: "" # /model_zoo/edsr.pth
 ```
 
 ### 3. Run
