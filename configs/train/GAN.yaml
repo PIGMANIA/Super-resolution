@@ -1,6 +1,6 @@
 common:
-  iteration: 800000
-  save_img_every: 1
+  iteration: 1600001
+  save_img_every: 100
   save_model_every: 10000
   seed: 123
   use_wandb: false
@@ -18,7 +18,7 @@ ddp:
   dist_backend: "nccl"
 
 loss:
-  lists: ["Charbonnier", "GANLoss", "PerceptualLoss"]
+  lists: ["MAE", "GANLoss", "PerceptualLoss"]
   GANLoss:
     real_label_val: 1.0
     fake_label_val: 0.0
@@ -38,12 +38,13 @@ optim:
   
 scheduler:
   type: MultiStepLR
-  milestones: [400000]
-  gamma: 0.5
+  g_milestones: [1200000]
+  d_milestones: [1200000]
+  g_gamma: 0.5
+  d_gamma: 0.5
 
 dataset:
   train_dir: "/dataset/SR/"
-  scale: 1
   batch_size: 8
   patch_size : 128
   num_workers: 4

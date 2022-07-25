@@ -13,8 +13,8 @@ class Dataset(Dataset):
         self.data_pipeline = DataPrepare(cfg)
 
         self.hrfiles = [
-            os.path.join(cfg.train_dir, x)
-            for x in os.listdir(cfg.train_dir)
+            os.path.join(cfg.train.dataset.train_dir, x)
+            for x in os.listdir(cfg.train.dataset.train_dir)
             if check_image_file(x)
         ]
 

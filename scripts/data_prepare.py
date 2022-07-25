@@ -16,56 +16,56 @@ from utils import uint2single, single2uint
 
 class DataPrepare:
     def __init__(self, cfg):
-        self.sf = cfg.scale
-        self.patch_size = cfg.patch_size
-        self.shuffle_prob = cfg.deg.shuffle_prob
+        self.sf = cfg.models.generator.scale
+        self.patch_size = cfg.train.dataset.patch_size
+        self.shuffle_prob = cfg.train.dataset.deg.shuffle_prob
         self.num_deg = 4
         self.num_deg_plus = 9
 
         # Sharpen
-        self.sharpen = cfg.sharpen.use
-        self.sharpen_weight = cfg.sharpen.weight
-        self.sharpen_radius = cfg.sharpen.radius
-        self.sharpen_threshold = cfg.sharpen.threshold
+        self.sharpen = cfg.train.dataset.sharpen.use
+        self.sharpen_weight = cfg.train.dataset.sharpen.weight
+        self.sharpen_radius = cfg.train.dataset.sharpen.radius
+        self.sharpen_threshold = cfg.train.dataset.sharpen.threshold
 
         """ degradation """
-        self.deg = cfg.deg.use
-        self.plus = cfg.deg.plus
+        self.deg = cfg.train.dataset.deg.use
+        self.plus = cfg.train.dataset.deg.plus
 
         # Sinc
-        self.sinc_prob = cfg.deg.sinc_prob
-        self.sinc_prob2 = cfg.deg.sinc_prob2
+        self.sinc_prob = cfg.train.dataset.deg.sinc_prob
+        self.sinc_prob2 = cfg.train.dataset.deg.sinc_prob2
 
         # Blur
-        self.kernel_list = cfg.deg.kernel_list
-        self.kernel_prob = cfg.deg.kernel_prob
-        self.blur_sigma = cfg.deg.blur_sigma
-        self.betag_range = cfg.deg.betag_range
-        self.betap_range = cfg.deg.betap_range
+        self.kernel_list = cfg.train.dataset.deg.kernel_list
+        self.kernel_prob = cfg.train.dataset.deg.kernel_prob
+        self.blur_sigma = cfg.train.dataset.deg.blur_sigma
+        self.betag_range = cfg.train.dataset.deg.betag_range
+        self.betap_range = cfg.train.dataset.deg.betap_range
         self.kernel_range = [2 * v + 1 for v in range(3, 11)]
 
-        self.kernel_list2 = cfg.deg.kernel_list2
-        self.kernel_prob2 = cfg.deg.kernel_prob2
-        self.blur_sigma2 = cfg.deg.blur_sigma2
-        self.betag_range2 = cfg.deg.betag_range2
-        self.betap_range2 = cfg.deg.betap_range2
+        self.kernel_list2 = cfg.train.dataset.deg.kernel_list2
+        self.kernel_prob2 = cfg.train.dataset.deg.kernel_prob2
+        self.blur_sigma2 = cfg.train.dataset.deg.blur_sigma2
+        self.betag_range2 = cfg.train.dataset.deg.betag_range2
+        self.betap_range2 = cfg.train.dataset.deg.betap_range2
 
         # Resize
-        self.resize_prob = cfg.deg.resize_prob
-        self.resize_range = cfg.deg.resize_range
-        self.resize_prob2 = cfg.deg.resize_prob2
-        self.resize_range2 = cfg.deg.resize_range2
+        self.resize_prob = cfg.train.dataset.deg.resize_prob
+        self.resize_range = cfg.train.dataset.deg.resize_range
+        self.resize_prob2 = cfg.train.dataset.deg.resize_prob2
+        self.resize_range2 = cfg.train.dataset.deg.resize_range2
 
-        self.updown_type = cfg.deg.updown_type
-        self.mode_list = cfg.deg.mode_list
+        self.updown_type = cfg.train.dataset.deg.updown_type
+        self.mode_list = cfg.train.dataset.deg.mode_list
 
         # Noise
-        self.noise_level1 = cfg.deg.noise_level1  # 2
-        self.noise_level2 = cfg.deg.noise_level2  # 25
+        self.noise_level1 = cfg.train.dataset.deg.noise_level1  # 2
+        self.noise_level2 = cfg.train.dataset.deg.noise_level2  # 25
 
         # JPEG
-        self.jpeg_prob = cfg.deg.jpeg_prob
-        self.jpeg_range = cfg.deg.jpeg_range
+        self.jpeg_prob = cfg.train.dataset.deg.jpeg_prob
+        self.jpeg_range = cfg.train.dataset.deg.jpeg_range
 
         # Sinc
         self.pulse_tensor = torch.zeros(

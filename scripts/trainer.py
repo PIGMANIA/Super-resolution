@@ -33,7 +33,7 @@ class Trainer:
         os.makedirs(self.save_path, exist_ok=True)
 
         self.gan_train = cfg.train.common.GAN
-        self.scale = cfg.train.dataset.scale
+        self.scale = cfg.models.generator.scale
         self.start_iters = 0
         self.end_iters = cfg.train.common.iteration
         self.seed = cfg.train.common.seed
@@ -69,7 +69,7 @@ class Trainer:
         self._init_optim(cfg.train.optim)
         self._init_loss(cfg.train.loss)
         self._load_state_dict(cfg.models)
-        self._init_scheduler(cfg.train.scheduler)
+        self._init_scheduler(cfg)
         self._init_dataset(cfg)
 
         ### Train
@@ -150,10 +150,9 @@ class Trainer:
                 print(
                     f"Loading the checkpoint from : {model.discriminator.path}"
                 )
-                loc = "cuda:{}".format(self.gpu)
                 ckpt = torch.load(
                     model.discriminator.path,
-                    map_location=loc,
+                    map_location="cuda:{}".format(self.gpu),
                 )
                 if len(ckpt) == 3:
                     self.num_iteration = ckpt["iteration"]
@@ -205,28 +204,34 @@ class Trainer:
                 )
         print("Initialized the optimizers")
 
-    def _init_scheduler(self, scheduler):
-        if self.start_iters > 0:
+    def _init_scheduler(self, cfg):
+        if not cfg.models.generator.path:
             self.g_scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 self.g_optim,
-                scheduler.g_milestones,
-                scheduler.g_gamma,
+                cfg.train.scheduler.g_milestones,
+                cfg.train.g_gamma,
                 last_epoch=self.start_iters,
             )
-            if self.gan_train:
-                self.d_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-                    self.d_optim,
-                    scheduler.d_milestones,
-                    scheduler.d_gamma,
-                    last_epoch=self.start_iters,
-                )
         else:
             self.g_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-                self.g_optim, scheduler.g_milestones, scheduler.g_gamma
+                self.g_optim,
+                cfg.train.scheduler.g_milestones,
+                cfg.train.scheduler.g_gamma,
             )
-            if self.gan_train:
+
+        if self.gan_train:
+            if len(cfg.models.discriminator.path) > 0:
                 self.d_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-                    self.d_optim, scheduler.d_milestones, scheduler.d_gamma
+                    self.d_optim,
+                    cfg.train.scheduler.d_milestones,
+                    cfg.train.scheduler.d_gamma,
+                    last_epoch=self.start_iters,
+                )
+            else:
+                self.d_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+                    self.d_optim,
+                    cfg.train.scheduler.d_milestones,
+                    cfg.train.scheduler.d_gamma,
                 )
         print("Initialized the schedulers")
 
@@ -237,7 +242,7 @@ class Trainer:
                     yield batch
 
         cfg.train.dataset.num_workers = 4 * torch.cuda.device_count()
-        train_dataset = Dataset(cfg.train.dataset)
+        train_dataset = Dataset(cfg)
 
         if self.distributed:
             train_sampler = torch.utils.data.distributed.DistributedSampler(
