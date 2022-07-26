@@ -175,6 +175,8 @@ class Generator(nn.Module):
     def forward(self, x):
         if self.scale == 2:
             feat = pixel_unshuffle(x, scale=2)
+        elif self.scale == 1:
+            feat = pixel_unshuffle(x, scale=4)
         else:
             feat = x
         feat = self.conv_first(feat)
@@ -184,10 +186,9 @@ class Generator(nn.Module):
         feat = self.lrelu(
             self.conv_up1(F.interpolate(feat, scale_factor=2, mode="nearest"))
         )
-        if self.scale == 4:
-            feat = self.lrelu(
-                self.conv_up2(F.interpolate(feat, scale_factor=2, mode="nearest"))
-            )
+        feat = self.lrelu(
+            self.conv_up2(F.interpolate(feat, scale_factor=2, mode="nearest"))
+        )
         out = self.conv_last(self.lrelu(self.conv_hr(feat)))
         return out
 
@@ -232,8 +233,12 @@ class Discriminator(nn.Module):
             nn.Conv2d(self.num_feat * 2, self.num_feat, 3, 1, 1, bias=False)
         )
         # extra convolutions
-        self.conv7 = norm(nn.Conv2d(self.num_feat, self.num_feat, 3, 1, 1, bias=False))
-        self.conv8 = norm(nn.Conv2d(self.num_feat, self.num_feat, 3, 1, 1, bias=False))
+        self.conv7 = norm(
+            nn.Conv2d(self.num_feat, self.num_feat, 3, 1, 1, bias=False)
+        )
+        self.conv8 = norm(
+            nn.Conv2d(self.num_feat, self.num_feat, 3, 1, 1, bias=False)
+        )
         self.conv9 = nn.Conv2d(self.num_feat, 1, 3, 1, 1)
 
     def forward(self, x):
@@ -244,17 +249,23 @@ class Discriminator(nn.Module):
         x3 = F.leaky_relu(self.conv3(x2), negative_slope=0.2, inplace=True)
 
         # upsample
-        x3 = F.interpolate(x3, scale_factor=2, mode="bilinear", align_corners=False)
+        x3 = F.interpolate(
+            x3, scale_factor=2, mode="bilinear", align_corners=False
+        )
         x4 = F.leaky_relu(self.conv4(x3), negative_slope=0.2, inplace=True)
 
         if self.skip_connection:
             x4 = x4 + x2
-        x4 = F.interpolate(x4, scale_factor=2, mode="bilinear", align_corners=False)
+        x4 = F.interpolate(
+            x4, scale_factor=2, mode="bilinear", align_corners=False
+        )
         x5 = F.leaky_relu(self.conv5(x4), negative_slope=0.2, inplace=True)
 
         if self.skip_connection:
             x5 = x5 + x1
-        x5 = F.interpolate(x5, scale_factor=2, mode="bilinear", align_corners=False)
+        x5 = F.interpolate(
+            x5, scale_factor=2, mode="bilinear", align_corners=False
+        )
         x6 = F.leaky_relu(self.conv6(x5), negative_slope=0.2, inplace=True)
 
         if self.skip_connection:
