@@ -3,7 +3,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from PIL import Image
 
-from data_prepare import DataPrepare
+from data.data_prepare import DataPrepare
 from utils import check_image_file
 
 
