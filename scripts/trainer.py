@@ -10,9 +10,9 @@ import torchvision.utils as vutils
 
 import torch.multiprocessing as mp
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
 
-from dataset import Dataset
+from data.dataset import Dataset
+from models import define_model
 
 
 class Trainer:
@@ -76,52 +76,9 @@ class Trainer:
         self.train()
 
     def _init_model(self, model):
-        if model.name.lower() == "scunet":
-            from archs.SCUNet.models import Generator
-
-            self.generator = Generator(model.generator).to(self.gpu)
-
-            if self.gan_train:
-                from archs.SCUNet.models import Discriminator
-
-                self.discriminator = Discriminator(model.discriminator).to(
-                    self.gpu
-                )
-
-        elif model.name.lower() == "realesrgan":
-            from archs.RealESRGAN.models import Generator
-
-            self.generator = Generator(model.generator).to(self.gpu)
-
-            if self.gan_train:
-                from archs.RealESRGAN.models import Discriminator
-
-                self.discriminator = Discriminator(model.discriminator).to(
-                    self.gpu
-                )
-
-        elif model.name.lower() == "bsrgan":
-            from archs.BSRGAN.models import Generator
-
-            self.generator = Generator(model.generator).to(self.gpu)
-
-            if self.gan_train:
-                from archs.BSRGAN.models import Discriminator
-
-                self.discriminator = Discriminator(model.discriminator).to(
-                    self.gpu
-                )
-
-        elif model.name.lower() == "edsr":
-            from archs.EDSR.models import Generator
-
-            self.generator = Generator(model.generator).to(self.gpu)
-
-        elif model.name.lower() == "swinir":
-            from archs.SwinIR.models import Generator
-
-            self.generator = Generator(model.generator).to(self.gpu)
-
+        self.generator, self.discriminator = define_model(
+            model, self.gpu, self.gan_train
+        )
         print("Initialized the model")
 
     def _load_state_dict(self, model):
@@ -467,6 +424,5 @@ def main(cfg):
         Trainer(0, cfg)
 
 
-# 1736225 using degradation for super-resolution scunet
 if __name__ == "__main__":
     main()
