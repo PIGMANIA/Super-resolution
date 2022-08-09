@@ -14,6 +14,9 @@ import torch.distributed as dist
 from data.dataset import Dataset
 from models import define_model
 
+from utils import preprocess
+import cv2
+
 
 class Trainer:
     def __init__(self, gpu, cfg) -> None:
@@ -89,7 +92,6 @@ class Trainer:
                 model.generator.path, map_location=lambda storage, loc: storage
             )
             if len(ckpt) == 3:
-                self.num_iteration = ckpt["iteration"]
                 if isinstance(model, nn.DataParallel):
                     self.generator.module.load_state_dict(ckpt["g"])
                 else:
@@ -112,7 +114,6 @@ class Trainer:
                     map_location="cuda:{}".format(self.gpu),
                 )
                 if len(ckpt) == 3:
-                    self.num_iteration = ckpt["iteration"]
                     if isinstance(model, nn.DataParallel):
                         self.discriminator.module.load_state_dict(ckpt["d"])
                     else:
@@ -162,11 +163,11 @@ class Trainer:
         print("Initialized the optimizers")
 
     def _init_scheduler(self, cfg):
-        if not cfg.models.generator.path:
+        if cfg.models.generator.path:
             self.g_scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 self.g_optim,
                 cfg.train.scheduler.g_milestones,
-                cfg.train.g_gamma,
+                cfg.train.scheduler.g_gamma,
                 last_epoch=self.start_iters,
             )
         else:
@@ -198,7 +199,10 @@ class Trainer:
                 for batch in loader:
                     yield batch
 
-        cfg.train.dataset.num_workers = 4 * torch.cuda.device_count()
+        cfg.train.dataset.num_workers = (
+            cfg.train.dataset.num_workers * torch.cuda.device_count()
+        )
+
         train_dataset = Dataset(cfg)
 
         if self.distributed:
@@ -282,7 +286,7 @@ class Trainer:
             if self.gpu == 0:
                 if i % self.save_img_every == 0:
                     vutils.save_image(
-                        results, os.path.join(self.save_path, f"preds.jpg")
+                        results, os.path.join(self.save_path, f"preds.png")
                     )
 
                 if i % self.save_model_every == 0:
@@ -363,8 +367,9 @@ class Trainer:
             if self.gpu == 0:
                 if i % self.save_img_every == 0:
                     vutils.save_image(
-                        results, os.path.join(self.save_path, f"preds.jpg")
+                        results, os.path.join(self.save_path, f"preds.png")
                     )
+
                 if i % self.save_model_every == 0:
                     if isinstance(self.generator, nn.DataParallel):
                         g_state_dict = self.generator.module.state_dict()

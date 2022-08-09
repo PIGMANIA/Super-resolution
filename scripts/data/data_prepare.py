@@ -5,6 +5,7 @@ import math
 import torch
 
 import scipy
+import scipy.stats as ss
 from scipy.interpolate import interp2d
 from scipy import special
 from scipy import ndimage
@@ -19,7 +20,7 @@ class DataPrepare:
         self.sf = cfg.models.generator.scale
         self.patch_size = cfg.train.dataset.patch_size
         self.shuffle_prob = cfg.train.dataset.deg.shuffle_prob
-        self.num_deg = 4
+        self.num_deg = 7
         self.num_deg_plus = 9
 
         # Sharpen
@@ -93,6 +94,7 @@ class DataPrepare:
 
         hr = uint2single(np.array(hr))
         lr = hr.copy()
+
         if self.sharpen:
             hr = self.add_sharpen(hr)
 
@@ -112,18 +114,37 @@ class DataPrepare:
                         shuffle_order[7 : self.num_deg_plus],
                         len(range(7, self.num_deg_plus)),
                     )
+
                 for i in shuffle_order:
                     ### first phase of degradation
                     if i == 0:
                         lr = self.generate_kernel1(lr)
                     elif i == 1:
-                        lr = self.random_resizing(lr)
+                        if random.random() < 0.75:
+                            lr = self.random_resizing(lr)
+                        else:
+                            k = self.fspecial_gaussian(
+                                25,
+                                random.uniform(0.1, 0.6 * self.sf),
+                            )
+                            k_shifted = self.shift_pixel(k, self.sf)
+                            k_shifted = (
+                                k_shifted / k_shifted.sum()
+                            )  # blur with shifted kernel
+                            lr = ndimage.filters.convolve(
+                                lr,
+                                np.expand_dims(k_shifted, axis=2),
+                                mode="mirror",
+                            )
+                            lr = lr[0 :: self.sf, 0 :: self.sf, ...]
                     elif i == 2:
-                        lr = self.add_Poisson_noise(lr)
+                        if random.random() < 0.1:
+                            lr = self.add_Poisson_noise(lr)
                     elif i == 3:
                         lr = self.add_Gaussian_noise(lr)
                     elif i == 4:
-                        lr = self.add_speckle_noise(lr)
+                        if random.random() < 0.1:
+                            lr = self.add_speckle_noise(lr)
 
                     ### second phase of degradation
                     elif i == 5:
@@ -131,9 +152,11 @@ class DataPrepare:
                     elif i == 6:
                         lr = self.random_resizing2(lr)
                     elif i == 7:
-                        lr = self.add_Poisson_noise(lr)
+                        if random.random() < 0.1:
+                            lr = self.add_Poisson_noise(lr)
                     elif i == 8:
-                        lr = self.add_Gaussian_noise(lr)
+                        if random.random() < 0.1:
+                            lr = self.add_Gaussian_noise(lr)
                     elif i == 9:
                         lr = self.add_speckle_noise(lr)
 
@@ -143,7 +166,6 @@ class DataPrepare:
                 else:
                     lr = self.add_JPEG_noise(lr)
                     lr = self.generate_sinc(lr)
-
             else:
                 shuffle_order = random.sample(range(self.num_deg), self.num_deg)
                 idx1, idx2 = shuffle_order.index(2), shuffle_order.index(3)
@@ -152,16 +174,25 @@ class DataPrepare:
                         shuffle_order[idx2],
                         shuffle_order[idx1],
                     )
-
                 for i in shuffle_order:
                     if i == 0:
-                        lr = self.generate_kernel1(lr)
-
+                        lr = self.add_blur(lr, self.sf)
                     elif i == 1:
+                        lr = self.add_blur(lr, self.sf)
+                    elif i == 2:
+                        a, b = lr.shape[1], lr.shape[0]
                         if random.random() < 0.75:
-                            lr = self.random_resizing(lr)
+                            sf1 = random.uniform(1, 2 * self.sf)
+                            lr = cv2.resize(
+                                lr,
+                                (
+                                    int(1 / sf1 * lr.shape[1]),
+                                    int(1 / sf1 * lr.shape[0]),
+                                ),
+                                interpolation=random.choice([1, 2, 3]),
+                            )
                         else:
-                            k = self.fspecial(
+                            k = self.fspecial_gaussian(
                                 25, random.uniform(0.1, 0.6 * self.sf)
                             )
                             k_shifted = self.shift_pixel(k, self.sf)
@@ -172,20 +203,25 @@ class DataPrepare:
                                 mode="mirror",
                             )
                             lr = lr[0 :: self.sf, 0 :: self.sf, ...]
-
-                            lr = np.clip(lr, 0.0, 1.0)
-
-                    elif i == 2:
-                        lr = self.add_Poisson_noise(lr)
-
+                        lr = np.clip(lr, 0.0, 1.0)
                     elif i == 3:
-                        lr = self.add_Gaussian_noise(lr)
-
+                        lr = cv2.resize(
+                            lr,
+                            (int(1 / self.sf * a), int(1 / self.sf * b)),
+                            interpolation=random.choice([1, 2, 3]),
+                        )
+                        lr = np.clip(lr, 0.0, 1.0)
                     elif i == 4:
-                        lr = self.add_speckle_noise(lr)
-
-                if random.random() < self.jpeg_prob:
-                    lr = self.add_JPEG_noise(lr)
+                        lr = self.add_Gaussian_noise(lr)
+                    elif i == 5:
+                        if random.random() < 0.1:
+                            lr = self.add_Poisson_noise(lr)
+                    elif i == 6:
+                        if random.random() < 0.1:
+                            lr = self.add_speckle_noise(lr)
+                    elif i == 7:
+                        if random.random() < 0.9:
+                            lr = self.add_JPEG_noise(lr)
 
         lr = cv2.resize(
             lr,
@@ -199,6 +235,70 @@ class DataPrepare:
         lr = single2uint(lr)
         hr = single2uint(hr)
         return lr, hr
+
+    def add_blur(self, img, sf=4):
+        def gm_blur_kernel(mean, cov, size=15):
+            center = size / 2.0 + 0.5
+            k = np.zeros([size, size])
+            for y in range(size):
+                for x in range(size):
+                    cy = y - center + 1
+                    cx = x - center + 1
+                    k[y, x] = ss.multivariate_normal.pdf(
+                        [cx, cy], mean=mean, cov=cov
+                    )
+
+            k = k / np.sum(k)
+            return k
+
+        def anisotropic_Gaussian(ksize=15, theta=np.pi, l1=6, l2=6):
+            """generate an anisotropic Gaussian kernel
+            Args:
+                ksize : e.g., 15, kernel size
+                theta : [0,  pi], rotation angle range
+                l1    : [0.1,50], scaling of eigenvalues
+                l2    : [0.1,l1], scaling of eigenvalues
+                If l1 = l2, will get an isotropic Gaussian kernel.
+            Returns:
+                k     : kernel
+            """
+
+            v = np.dot(
+                np.array(
+                    [
+                        [np.cos(theta), -np.sin(theta)],
+                        [np.sin(theta), np.cos(theta)],
+                    ]
+                ),
+                np.array([1.0, 0.0]),
+            )
+            V = np.array([[v[0], v[1]], [v[1], -v[0]]])
+            D = np.array([[l1, 0], [0, l2]])
+            Sigma = np.dot(np.dot(V, D), np.linalg.inv(V))
+            k = gm_blur_kernel(mean=[0, 0], cov=Sigma, size=ksize)
+
+            return k
+
+        wd2 = 4.0 + sf
+        wd = 2.0 + 0.2 * sf
+        if random.random() < 0.5:
+            l1 = wd2 * random.random()
+            l2 = wd2 * random.random()
+            k = anisotropic_Gaussian(
+                ksize=2 * random.randint(2, 11) + 3,
+                theta=random.random() * np.pi,
+                l1=l1,
+                l2=l2,
+            )
+        else:
+            k = self.fspecial_gaussian(
+                2 * random.randint(2, 11) + 3, wd * random.random()
+            )
+        img = ndimage.filters.convolve(
+            img, np.expand_dims(k, axis=2), mode="mirror"
+        )
+
+        return img
 
     def fspecial_gaussian(self, hsize, sigma):
         hsize = [hsize, hsize]
@@ -214,13 +314,6 @@ class DataPrepare:
         if sumh != 0:
             h = h / sumh
         return h
-
-    def fspecial(self, hsize, sigma):
-        """
-        python code from:
-        https://github.com/ronaldosena/imagens-medicas-2/blob/40171a6c259edec7827a6693a93955de2bd39e76/Aulas/aula_2_-_uniform_filter/matlab_fspecial.py
-        """
-        return self.fspecial_gaussian(hsize, sigma)
 
     def shift_pixel(self, x, sf, upper_left=True):
         h, w = x.shape[:2]
