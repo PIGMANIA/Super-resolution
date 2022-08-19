@@ -19,6 +19,7 @@ class DataPrepare:
     def __init__(self, cfg):
         self.sf = cfg.models.generator.scale
         self.patch_size = cfg.train.dataset.patch_size
+        self.gt_size = cfg.train.dataset.gt_size
         self.shuffle_prob = cfg.train.dataset.deg.shuffle_prob
         self.num_deg = 7
         self.num_deg_plus = 9
@@ -75,24 +76,9 @@ class DataPrepare:
         self.pulse_tensor[10, 10] = 1
 
     def data_pipeline(self, hr):
-        width, height = hr.size
-        crop_w = random.randint(0, width - self.patch_size)
-        crop_h = random.randint(0, height - self.patch_size)
-
-        hr = hr.crop(
-            (
-                crop_w,
-                crop_h,
-                crop_w + self.patch_size * self.sf,
-                crop_h + self.patch_size * self.sf,
-            )
-        )
-
-        rotate = [0, 90, 180, 270]
-        rotate = rotate[random.randint(0, len(rotate) - 1)]
-        hr = hr.rotate(rotate)
-
-        hr = uint2single(np.array(hr))
+        hr, _ = self.random_crop(hr=hr, lr=None, crop_size=self.gt_size)
+        hr = self.random_roate(hr)
+        hr = uint2single(hr)
         lr = hr.copy()
 
         if self.sharpen:
@@ -158,7 +144,8 @@ class DataPrepare:
                         if random.random() < 0.1:
                             lr = self.add_Gaussian_noise(lr)
                     elif i == 9:
-                        lr = self.add_speckle_noise(lr)
+                        if random.random() < 0.1:
+                            lr = self.add_speckle_noise(lr)
 
                 if np.random.uniform() < 0.5:
                     lr = self.generate_sinc(lr)
@@ -226,15 +213,44 @@ class DataPrepare:
         lr = cv2.resize(
             lr,
             (
-                self.patch_size,
-                self.patch_size,
+                self.gt_size,
+                self.gt_size,
             ),
             interpolation=random.choice([1, 2, 3]),
         )
+        hr, lr = self.random_crop(hr=hr, lr=lr, crop_size=self.patch_size)
 
         lr = single2uint(lr)
         hr = single2uint(hr)
         return lr, hr
+
+    def random_roate(self, hr):
+        hr = ndimage.rotate(hr, 90)
+        return hr
+
+    def random_crop(self, hr, lr=None, crop_size=320):
+        max_x = hr.shape[1] - crop_size
+        max_y = hr.shape[0] - crop_size
+        # print(
+        #     f"w : {hr.shape[1]}, h : {hr.shape[0]}, crop_size : {crop_size}, max_x : {max_x}, max_y : {max_y}"
+        # )
+        x = np.random.randint(0, max_x)
+        y = np.random.randint(0, max_y)
+
+        hr = hr[y : y + crop_size, x : x + crop_size]
+
+        if lr is not None:
+            lr = lr[y : y + crop_size, x : x + crop_size]
+            lr = cv2.resize(
+                lr,
+                (
+                    crop_size // self.sf,
+                    crop_size // self.sf,
+                ),
+                interpolation=random.choice([1, 2, 3]),
+            )
+
+        return hr, lr
 
     def add_blur(self, img, sf=4):
         def gm_blur_kernel(mean, cov, size=15):

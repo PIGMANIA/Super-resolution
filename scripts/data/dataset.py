@@ -1,7 +1,7 @@
 import os
 import torchvision.transforms as transforms
+import cv2
 from torch.utils.data import Dataset
-from PIL import Image
 
 from data.data_prepare import DataPrepare
 from utils import check_image_file
@@ -22,8 +22,9 @@ class Dataset(Dataset):
         self.to_tensor = transforms.ToTensor()
 
     def __getitem__(self, index):
-        # Read input data and output data
-        hr = Image.open(self.hrfiles[index]).convert("RGB")
+        hr = cv2.imread(self.hrfiles[index])
+        hr = cv2.cvtColor(hr, cv2.COLOR_BGR2RGB)
+
         lr, hr = self.data_pipeline.data_pipeline(hr)
         return self.to_tensor(lr), self.to_tensor(hr)
 
