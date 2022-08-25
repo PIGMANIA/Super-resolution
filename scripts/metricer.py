@@ -96,7 +96,7 @@ class Metricer:
 
         df = pd.DataFrame.from_dict(scores, orient="columns")
         df.index = filenames
-        df.sort_index()
+        df = df.sort_index()
         df.to_csv("Quantitative_Score.csv")
 
 @hydra.main(config_path="../configs", config_name="valid.yaml")
