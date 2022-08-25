@@ -18,14 +18,7 @@ ddp:
   dist_backend: "nccl"
 
 loss:
-  lists: ["MAE"]
-  GANLoss:
-    real_label_val: 1.0
-    fake_label_val: 0.0
-    loss_weight: !!float 1e-1
-  PerceptualLoss:
-    feature_layer: 35
-    loss_weight: !!float 1.0
+  lists: ["Charbonnier"]
 
 optim:
   type: "Adam"
@@ -36,26 +29,25 @@ optim:
   
 scheduler:
   type: MultiStepLR
-  g_milestones: [200000, 400000, 600000, 800000, 1000000, 2000000]
-  d_milestones: [200000, 400000, 600000, 800000, 1000000, 2000000]
+  g_milestones: [400000]
   g_gamma: 0.5
-  d_gamma: 0.5
 
 dataset:
   train_dir: "/dataset/SR/"
   batch_size: 8
   patch_size : 128
-  num_workers: 4
+  gt_size: 320
+  num_workers: 8
 
   sharpen:
-    use: false
+    use: true
     weight: 1.0
     radius: 50
     threshold: 10
   
   deg:
     use: true
-    plus: true
+    plus: false
     jpeg_prob: 0.9
     shuffle_prob: 0.1
     updown_type: ["up", "down", "keep"]

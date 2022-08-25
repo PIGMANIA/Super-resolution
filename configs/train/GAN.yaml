@@ -1,5 +1,5 @@
 common:
-  iteration: 1600001
+  iteration: 1000001
   save_img_every: 100
   save_model_every: 10000
   seed: 123
@@ -18,14 +18,24 @@ ddp:
   dist_backend: "nccl"
 
 loss:
-  lists: ["MAE", "GANLoss", "PerceptualLoss"]
+  lists: ["Charbonnier", "GANLoss", "PerceptualLoss"] #MAE
   GANLoss:
     real_label_val: 1.0
     fake_label_val: 0.0
     loss_weight: !!float 1e-1
   PerceptualLoss:
-    feature_layer: 35
-    loss_weight: !!float 1.0
+    vgg_path: /workspace/SuperResolution/model_zoo/VGG/vgg19-dcbb9e9d.pth # https://pytorch.org/vision/0.8/_modules/torchvision/models/vgg.html
+    layer_weights:
+      'conv1_2': 0.1
+      'conv2_2': 0.1
+      'conv3_4': 1
+      'conv4_4': 1
+      'conv5_4': 1
+    vgg_type: vgg19
+    use_input_norm: true,
+    range_norm: false,
+    perceptual_weight: !!float 1.0
+    criterion: l1
 
 optim:
   type: "Adam"
@@ -38,20 +48,21 @@ optim:
   
 scheduler:
   type: MultiStepLR
-  g_milestones: [1200000]
-  d_milestones: [1200000]
+  g_milestones: [400000]
+  d_milestones: [400000]
   g_gamma: 0.5
   d_gamma: 0.5
 
 dataset:
   train_dir: "/dataset/SR/"
   batch_size: 8
-  patch_size : 128
-  num_workers: 4
+  patch_size : 256
+  gt_size: 320
+  num_workers: 8
   
   sharpen:
     use: true
-    weight: 0.15
+    weight: 0.50
     radius: 50
     threshold: 10
 
