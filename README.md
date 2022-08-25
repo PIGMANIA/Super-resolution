@@ -11,6 +11,7 @@
 - [Citation](#citation)
 
 ## Updates
+- **_News (2022-08-25)_**: Implemented calculator for quantitative score
 - **_News (2022-07-23)_**: Implemented multi-gpus train approach using pytorch distributed data parallel
 - **_News (2022-07-19)_**: Implemented upsampler module at end of Scunet model
 - **_News (2022-07-05)_**: Implemented test codes for video and image
