@@ -56,7 +56,7 @@ configs/
 
 ```yaml
 ### train.yaml 
-### A user should change model_name and train_type to train various models
+### A user should change model_name and train_type to train with various models
 
 hydra:
   run:
@@ -90,7 +90,7 @@ discriminator:
 
 ```yaml
 ### test.yaml 
-### A user should change model_name and test_type to test various models
+### A user should change model_name and test_type to test with various models
 
 hydra:
   run:
@@ -107,6 +107,33 @@ defaults:
 ### A user should specify the path of pre-trained to load weights, in order to inference your model
 generator:
   path: "" # /model_zoo/edsr.pth
+```
+
+#### Valid
+
+```yaml
+### valid.yaml 
+### A user should change model_name and vaild_type to valid with various models
+
+hydra:
+  run:
+    dir: ./outputs/SCUNET/valid/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+defaults:
+  - _self_
+  - valid: valid_typr # quantitative
+  - models: model_name # EDSR
+```
+
+```yaml
+### quantitative.yaml
+### A user should specify the path of hr_dir & lr_dir to load custom dataset and metrics to valid your models
+save_path: "quantitative"
+dataset:
+  hr_dir: "/workspace/SuperResolution/example/Ref"
+  lr_dir: "/workspace/SuperResolution/example/Dis"
+
+metrics: [psnr, ssim, lpips, erqa]
 ```
 
 ### 3. Run
