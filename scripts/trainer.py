@@ -1,21 +1,28 @@
-import os
-import hydra
 import builtins
+import os
+import numpy as np
+import wandb
+import hydra
 import torch
 import torch.backends.cudnn as cudnn
-from torch import nn
-from torch.utils.data.dataloader import DataLoader
-from torch.nn import functional as F
-import torchvision.utils as vutils
-
-import torch.multiprocessing as mp
 import torch.distributed as dist
+import torch.multiprocessing as mp
+import torchvision.utils as vutils
+import torchvision.transforms as transforms
 
-from data.dataset import Dataset
+from torch import nn
+from torch.nn import functional as F
+from torch.utils.data.dataloader import DataLoader
+
+from data.dataset import (
+    TrainDataset,
+    TrainYUVDataset,
+    ValidDataset,
+    PiPalValidDataset,
+)
+from metric.metrics import LPIPS, PSNR, SSIM
 from models import define_model
-
-from utils import preprocess
-import cv2
+from utils import save_model
 
 
 class Trainer:
@@ -32,6 +39,7 @@ class Trainer:
             builtins.print = print_pass
 
         ### Common setting
+        self.best_score = None
         self.save_path = cfg.train.common.ckpt_dir
         os.makedirs(self.save_path, exist_ok=True)
 
@@ -63,9 +71,12 @@ class Trainer:
 
         ### Dataset setting
         self.distributed = cfg.train.ddp.distributed
-        self.dataloader = None
+        self.train_dataloader = None
+        self.valid_dataloader = None
 
         ### Initializer
+        if self.use_wandb:
+            self._init_wandb(cfg)
         self._init_model(cfg.models)
         if cfg.train.ddp.distributed:
             self._init_distributed_data_parallel(cfg)
@@ -74,9 +85,14 @@ class Trainer:
         self._load_state_dict(cfg.models)
         self._init_scheduler(cfg)
         self._init_dataset(cfg)
+        self._init_metrics(cfg.train.metrics)
 
         ### Train
         self.train()
+
+    def _init_wandb(self, cfg):
+        wandb.init(project=cfg.models.name)
+        wandb.config.update(cfg)
 
     def _init_model(self, model):
         self.generator, self.discriminator = define_model(
@@ -97,11 +113,9 @@ class Trainer:
                 else:
                     self.generator.load_state_dict(ckpt["g"])
                 self.g_optim.load_state_dict(ckpt["g_optim"])
-                self.start_iters = ckpt["iteration"] + 1
+                self.start_iters = 0  # ckpt["iteration"] + 1
             else:
                 self.generator.load_state_dict(ckpt)
-        else:
-            print("Train the generator without checkpoint")
 
         if self.gan_train:
             if model.discriminator.path:
@@ -203,7 +217,7 @@ class Trainer:
             cfg.train.dataset.num_workers * torch.cuda.device_count()
         )
 
-        train_dataset = Dataset(cfg)
+        train_dataset = TrainDataset(cfg.train.dataset.train, cfg.models)
 
         if self.distributed:
             train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -214,18 +228,40 @@ class Trainer:
         else:
             train_sampler = None
 
-        dataloader = DataLoader(
-            dataset=train_dataset,
-            batch_size=cfg.train.dataset.batch_size,
-            shuffle=(train_sampler is None),
-            num_workers=cfg.train.dataset.num_workers,
-            pin_memory=True,
-            sampler=train_sampler,
-            drop_last=True,
+        self.train_dataloader = sample_data(
+            DataLoader(
+                dataset=train_dataset,
+                batch_size=cfg.train.dataset.train.batch_size,
+                shuffle=(train_sampler is None),
+                num_workers=cfg.train.dataset.num_workers,
+                pin_memory=True,
+                sampler=train_sampler,
+                drop_last=True,
+            )
         )
-        self.dataloader = sample_data(dataloader)
+
+        # self.valid_dataloader = DataLoader(
+        #     dataset=valid_dataset,
+        #     batch_size=cfg.train.dataset.valid.batch_size,
+        #     shuffle=(valid_sampler is None),
+        #     num_workers=2,
+        #     pin_memory=False,
+        #     sampler=valid_sampler,
+        # )
 
         print("Initialized the datasets")
+
+    def _init_metrics(self, metric):
+        types = metric.types
+        metrics = []
+        for t in types:
+            if t == "psnr":
+                metrics.append(PSNR())
+            elif t == "ssim":
+                metrics.append(SSIM())
+            elif t == "lpips":
+                metrics.append(LPIPS())
+        self.metrics = metrics
 
     def _init_distributed_data_parallel(self, cfg):
         cfg.train.ddp.rank = cfg.train.ddp.nr * cfg.train.ddp.gpus + self.gpu
@@ -260,31 +296,30 @@ class Trainer:
         self.generator.train()
 
         for i in range(self.start_iters, self.end_iters):
-            lr, hr = next(self.dataloader)
+            lr, hr = next(self.train_dataloader)
             lr = lr.to(self.gpu)
             hr = hr.to(self.gpu)
 
             preds = self.generator(lr)
             loss = self.l1loss(preds, hr)
 
-            self.generator.zero_grad()
+            self.g_optim.zero_grad()
             loss.backward()
             self.g_optim.step()
             self.g_scheduler.step()
 
-            results = torch.cat(
-                (
-                    hr.detach(),
-                    F.interpolate(
-                        lr, scale_factor=self.scale, mode="nearest"
-                    ).detach(),
-                    preds.detach(),
-                ),
-                2,
-            )
-
             if self.gpu == 0:
                 if i % self.save_img_every == 0:
+                    results = torch.cat(
+                        (
+                            hr.detach(),
+                            F.interpolate(
+                                lr, scale_factor=self.scale, mode="nearest"
+                            ).detach(),
+                            preds.detach(),
+                        ),
+                        2,
+                    )
                     vutils.save_image(
                         results, os.path.join(self.save_path, f"preds.png")
                     )
@@ -295,7 +330,21 @@ class Trainer:
                     else:
                         g_state_dict = self.generator.state_dict()
 
-                    torch.save(
+                    # scores = self.valid()
+                    # if self.best_score == None:
+                    #     self.best_score = scores["PSNR_SCORE"]
+                    # elif scores["PSNR_SCORE"] > self.best_score:
+                    #     self.best_score = scores["PSNR_SCORE"]
+                    #     if self.use_wandb:
+                    #         wandb.log({"Best psnr": self.best_score})
+                    #     save_model(
+                    #         g_state_dict,
+                    #         os.path.join(
+                    #             self.save_path, f"best_{str(i).zfill(6)}.pth"
+                    #         ),
+                    #     )
+                    # else:
+                    save_model(
                         {
                             "g": g_state_dict,
                             "g_optim": self.g_optim.state_dict(),
@@ -305,17 +354,17 @@ class Trainer:
                     )
 
     def train_gan(self):
-        self.generator.train()
-        self.discriminator.train()
-
         def requires_grad(model, flag=True):
             for p in model.parameters():
                 p.requires_grad = flag
 
+        self.generator.train()
+        self.discriminator.train()
+
         for i in range(self.start_iters, self.end_iters):
-            lr, hr = next(self.dataloader)
-            lr = lr.to(self.gpu)
-            hr = hr.to(self.gpu)
+            lr, hr = next(self.train_dataloader)
+            lr = lr.to(self.gpu).float()
+            hr = hr.to(self.gpu).float()
 
             requires_grad(self.generator, False)
             requires_grad(self.discriminator, True)
@@ -353,19 +402,18 @@ class Trainer:
             self.g_scheduler.step()
             self.d_scheduler.step()
 
-            results = torch.cat(
-                (
-                    hr.detach(),
-                    F.interpolate(
-                        lr, scale_factor=self.scale, mode="nearest"
-                    ).detach(),
-                    preds.detach(),
-                ),
-                2,
-            )
-
             if self.gpu == 0:
                 if i % self.save_img_every == 0:
+                    results = torch.cat(
+                        (
+                            hr.detach(),
+                            F.interpolate(
+                                lr, scale_factor=self.scale, mode="nearest"
+                            ).detach(),
+                            preds.detach(),
+                        ),
+                        2,
+                    )
                     vutils.save_image(
                         results, os.path.join(self.save_path, f"preds.png")
                     )
@@ -378,7 +426,18 @@ class Trainer:
                         g_state_dict = self.generator.state_dict()
                         d_state_dict = self.discriminator.state_dict()
 
-                    torch.save(
+                    # scores = self.pipal_valid()
+                    # if self.best_score == None:
+                    #     self.best_score = scores["LPIPS_SCORE"]
+                    # elif scores["LPIPS_SCORE"] < self.best_score:
+                    #     self.best_score = scores["LPIPS_SCORE"]
+                    #     wandb.log({"Best lpips": self.best_score})
+                    #     save_model(
+                    #         g_state_dict,
+                    #         os.path.join(self.save_path, f"best.pth"),
+                    #     )
+                    # else:
+                    save_model(
                         {
                             "g": g_state_dict,
                             "g_optim": self.g_optim.state_dict(),
@@ -389,7 +448,7 @@ class Trainer:
                         ),
                     )
 
-                    torch.save(
+                    save_model(
                         {
                             "d": d_state_dict,
                             "d_optim": self.d_optim.state_dict(),
@@ -400,11 +459,73 @@ class Trainer:
                         ),
                     )
 
+    def valid(self):
+        scores = {}
+        self.generator.eval()
+
+        for m in self.metrics:
+            scores[m.name] = []
+
+        for lr, hr in self.valid_dataloader:
+            lr = lr.to(self.gpu)
+            hr = hr.to(self.gpu)
+
+            with torch.no_grad():
+                preds = self.generator(lr)
+
+            for m in self.metrics:
+                scores[m.name].append(m(preds, hr).item())
+
+        for m in self.metrics:
+            scores[m.name] = sum(scores[m.name]) / len(scores[m.name])
+
+        if self.use_wandb:
+            wandb.log(scores)
+
+        self.generator.train()
+
+        return scores
+
+    def pipal_valid(self):
+        self.generator.eval()
+
+        scores = {}
+        for m in self.metrics:
+            scores[m.name] = []
+
+        to_tensor = transforms.ToTensor()
+
+        for lrs, hr, lrnames in self.valid_dataloader:
+            lrnames = np.array(lrnames).flatten()
+            hr = to_tensor(np.array(hr).squeeze(0)).unsqueeze(0).to(self.gpu)
+            lrs = np.stack(lrs, 0)
+
+            for lr in lrs:
+                lr = to_tensor(lr.squeeze(0)).unsqueeze(0).to(self.gpu)
+
+                with torch.no_grad():
+                    preds = self.generator(lr)
+
+                for m in self.metrics:
+                    scores[m.name].append(m(preds, hr).item())
+
+        for m in self.metrics:
+            scores[m.name] = sum(scores[m.name]) / len(scores[m.name])
+
+        if self.use_wandb:
+            wandb.log(scores)
+
+        self.generator.train()
+        return scores
+
     def train(self):
         if not self.gan_train:
             self.train_psnr()
         else:
             self.train_gan()
+
+
+# 17827 GPU 4 SCUNET GAN
 
 
 @hydra.main(config_path="../configs/", config_name="train.yaml")

@@ -1,7 +1,7 @@
 import os
 import cv2
 import hydra
-import logging
+
 import torch
 import torch.backends.cudnn as cudnn
 import numpy as np
@@ -16,6 +16,7 @@ class Tester:
         cudnn.benchmark = True
         self.gpu = gpu
         self.scale = cfg.models.generator.scale
+        self.model_name = cfg.models.name
         self.image_path = cfg.test.common.image_path
         self.save_path = cfg.test.common.save_path
         os.makedirs(self.save_path, exist_ok=True)
@@ -41,7 +42,7 @@ class Tester:
             if len(ckpt) == 3:
                 self.generator.load_state_dict(ckpt["g"])
             else:
-                self.generator.load_state_dict(ckpt)
+                self.generator.load_state_dict(ckpt)  # ["params_ema"]
 
     def img_test(self):
         images = []
@@ -58,26 +59,22 @@ class Tester:
         for path in tqdm(images):
             img = cv2.imread(path)
             h, w = img.shape[:2]
-            img = cv2.resize(
-                img,
-                (w // self.scale, h // self.scale),
-                interpolation=cv2.INTER_CUBIC,
-            )
+            # img = cv2.resize(
+            #     img,
+            #     (w // self.scale, h // self.scale),
+            #     interpolation=cv2.INTER_CUBIC,
+            # )
             lr = preprocess(img).to(self.gpu)
 
             with torch.no_grad():
                 preds = self.generator(lr)
 
             cv2.imwrite(
-                os.path.join(self.save_path, path.split("/")[-1]),
+                os.path.join(
+                    self.save_path, self.model_name + "_" + path.split("/")[-1]
+                ),
                 postprocess(preds),
             )
-
-        ### (train) SCUSR x2 total time to finish : 454.88920283317566
-        ### (train) RealESRGAN x4 total time to finish : 922.6403729915619
-        ### (train) RealESRGAN x2 total time to finish : 361.8168976306915
-        ### (valid) SCUSR x2 total time to finish : 84.97539496421814
-        ### (valid) RealESRGAN x2 total time to finish : 69.5964424610138
 
     def video_test(self):
         import ffmpeg
@@ -160,6 +157,26 @@ class Tester:
                 with torch.no_grad():
                     preds = self.generator(lr)
                 preds = postprocess(preds)
+
+                # in_frame = cv2.resize(
+                #     in_frame,
+                #     (target_width, target_height),
+                #     interpolation=cv2.INTER_LANCZOS4,
+                # )
+                # preds = cv2.resize(
+                #     preds,
+                #     (target_width, target_height),
+                #     interpolation=cv2.INTER_LANCZOS4,
+                # )
+                # preds = np.hstack(
+                #     (
+                #         in_frame[
+                #             :, target_width // 4 : target_width // 4 * 3, :
+                #         ],
+                #         preds[:, target_width // 4 : target_width // 4 * 3, :],
+                #     )
+                # )
+                # preds = cv2.resize(preds, (target_width, target_height), cv2.INTER_LANCZOS4)
                 out_process.stdin.write(preds.tobytes())
 
             in_process.stdout.close()

@@ -1,5 +1,31 @@
+import os
 import torch
 import numpy as np
+
+
+def convert_rgb_to_y(img, dim_order="hwc"):
+    if dim_order == "hwc":
+        return (
+            16.0
+            + (
+                64.738 * img[..., 0]
+                + 129.057 * img[..., 1]
+                + 25.064 * img[..., 2]
+            )
+            / 256.0
+        )
+    else:
+        return (
+            16.0
+            + (64.738 * img[0] + 129.057 * img[1] + 25.064 * img[2]) / 256.0
+        )
+
+
+def save_model(model_meta, save_path):
+    torch.save(
+        model_meta,
+        save_path,
+    )
 
 
 def check_image_file(filename: str):
