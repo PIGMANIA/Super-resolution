@@ -1,8 +1,10 @@
+import os
 import random
 import numpy as np
 import cv2
 import math
 import torch
+import hydra
 
 import scipy
 import scipy.stats as ss
@@ -12,62 +14,96 @@ from scipy import ndimage
 from scipy.stats import multivariate_normal
 from scipy.linalg import orth
 
-from utils import uint2single, single2uint
+# from utils import uint2single, single2uint, check_image_file
+
+
+def check_image_file(filename: str):
+    return any(
+        filename.endswith(extension)
+        for extension in [
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".bmp",
+            ".tif",
+            ".tiff",
+            ".JPG",
+            ".JPEG",
+            ".PNG",
+            ".BMP",
+        ]
+    )
+
+
+def uint2single(img):
+    return np.float32(img / 255.0)
+
+
+def single2uint(img):
+    return np.uint8((img.clip(0, 1) * 255.0).round())
 
 
 class DataPrepare:
-    def __init__(self, cfg):
-        self.sf = cfg.models.generator.scale
-        self.patch_size = cfg.train.dataset.patch_size
-        self.gt_size = cfg.train.dataset.gt_size
-        self.shuffle_prob = cfg.train.dataset.deg.shuffle_prob
-        self.num_deg = 7
-        self.num_deg_plus = 9
+    def __init__(self, train, model):
+        self.sf = model.generator.scale
+        self.patch_size = train.patch_size
+        self.gt_size = train.gt_size
+        self.shuffle_prob = train.deg.shuffle_prob
 
         # Sharpen
-        self.sharpen = cfg.train.dataset.sharpen.use
-        self.sharpen_weight = cfg.train.dataset.sharpen.weight
-        self.sharpen_radius = cfg.train.dataset.sharpen.radius
-        self.sharpen_threshold = cfg.train.dataset.sharpen.threshold
+        self.sharpen = train.sharpen.use
+        self.sharpen_weight = train.sharpen.weight
+        self.sharpen_radius = train.sharpen.radius
+        self.sharpen_threshold = train.sharpen.threshold
 
         """ degradation """
-        self.deg = cfg.train.dataset.deg.use
-        self.plus = cfg.train.dataset.deg.plus
+        self.deg = train.deg.use
+        self.plus = train.deg.plus
+        if self.plus:
+            self.deg_processes = list(train.deg.processes_plus)
+        else:
+            self.deg_processes = list(train.deg.processes)
+        self.num_deg = (
+            len(self.deg_processes)
+            if len(self.deg_processes) % 2 == 0
+            else len(self.deg_processes) + 1
+        )
+        self.num_half_deg = self.num_deg // 2
 
         # Sinc
-        self.sinc_prob = cfg.train.dataset.deg.sinc_prob
-        self.sinc_prob2 = cfg.train.dataset.deg.sinc_prob2
+        self.sinc_prob = train.deg.sinc_prob
+        self.sinc_prob2 = train.deg.sinc_prob2
 
         # Blur
-        self.kernel_list = cfg.train.dataset.deg.kernel_list
-        self.kernel_prob = cfg.train.dataset.deg.kernel_prob
-        self.blur_sigma = cfg.train.dataset.deg.blur_sigma
-        self.betag_range = cfg.train.dataset.deg.betag_range
-        self.betap_range = cfg.train.dataset.deg.betap_range
+        self.kernel_list = train.deg.kernel_list
+        self.kernel_prob = train.deg.kernel_prob
+        self.blur_sigma = train.deg.blur_sigma
+        self.betag_range = train.deg.betag_range
+        self.betap_range = train.deg.betap_range
         self.kernel_range = [2 * v + 1 for v in range(3, 11)]
 
-        self.kernel_list2 = cfg.train.dataset.deg.kernel_list2
-        self.kernel_prob2 = cfg.train.dataset.deg.kernel_prob2
-        self.blur_sigma2 = cfg.train.dataset.deg.blur_sigma2
-        self.betag_range2 = cfg.train.dataset.deg.betag_range2
-        self.betap_range2 = cfg.train.dataset.deg.betap_range2
+        self.kernel_list2 = train.deg.kernel_list2
+        self.kernel_prob2 = train.deg.kernel_prob2
+        self.blur_sigma2 = train.deg.blur_sigma2
+        self.betag_range2 = train.deg.betag_range2
+        self.betap_range2 = train.deg.betap_range2
 
         # Resize
-        self.resize_prob = cfg.train.dataset.deg.resize_prob
-        self.resize_range = cfg.train.dataset.deg.resize_range
-        self.resize_prob2 = cfg.train.dataset.deg.resize_prob2
-        self.resize_range2 = cfg.train.dataset.deg.resize_range2
+        self.resize_prob = train.deg.resize_prob
+        self.resize_range = train.deg.resize_range
+        self.resize_prob2 = train.deg.resize_prob2
+        self.resize_range2 = train.deg.resize_range2
 
-        self.updown_type = cfg.train.dataset.deg.updown_type
-        self.mode_list = cfg.train.dataset.deg.mode_list
+        self.updown_type = train.deg.updown_type
+        self.mode_list = train.deg.mode_list
 
         # Noise
-        self.noise_level1 = cfg.train.dataset.deg.noise_level1  # 2
-        self.noise_level2 = cfg.train.dataset.deg.noise_level2  # 25
+        self.noise_level1 = train.deg.noise_level1  # 2
+        self.noise_level2 = train.deg.noise_level2  # 25
 
         # JPEG
-        self.jpeg_prob = cfg.train.dataset.deg.jpeg_prob
-        self.jpeg_range = cfg.train.dataset.deg.jpeg_range
+        self.jpeg_prob = train.deg.jpeg_prob
+        self.jpeg_range = train.deg.jpeg_range
 
         # Sinc
         self.pulse_tensor = torch.zeros(
@@ -87,25 +123,23 @@ class DataPrepare:
         if self.deg:
             if self.plus:
                 if random.random() < self.shuffle_prob:
-                    shuffle_order = random.sample(
-                        range(self.num_deg_plus), self.num_deg_plus
-                    )
+                    shuffle_order = self.deg_processes
                 else:
-                    shuffle_order = list(range(self.num_deg_plus))
-                    # local shuffle for noise, JPEG is always the last one
-                    shuffle_order[2:4] = random.sample(
-                        shuffle_order[2:4], len(range(2, 4))
+                    shuffle_order = self.deg_processes
+                    shuffle_order[0 : self.num_half_deg] = random.sample(
+                        shuffle_order[0 : self.num_half_deg],
+                        len(shuffle_order[0 : self.num_half_deg]),
                     )
-                    shuffle_order[7 : self.num_deg_plus] = random.sample(
-                        shuffle_order[7 : self.num_deg_plus],
-                        len(range(7, self.num_deg_plus)),
+                    shuffle_order[self.num_half_deg :] = random.sample(
+                        shuffle_order[self.num_half_deg :],
+                        len(shuffle_order[self.num_half_deg :]),
                     )
 
-                for i in shuffle_order:
+                for deg in shuffle_order:
                     ### first phase of degradation
-                    if i == 0:
+                    if deg == "blur_1":
                         lr = self.generate_kernel1(lr)
-                    elif i == 1:
+                    elif deg == "resize_1":
                         if random.random() < 0.75:
                             lr = self.random_resizing(lr)
                         else:
@@ -123,27 +157,27 @@ class DataPrepare:
                                 mode="mirror",
                             )
                             lr = lr[0 :: self.sf, 0 :: self.sf, ...]
-                    elif i == 2:
+                    elif deg == "gaussian_noise_1":
+                        lr = self.add_Gaussian_noise(lr)
+                    elif deg == "poisson_noise_1":
                         if random.random() < 0.1:
                             lr = self.add_Poisson_noise(lr)
-                    elif i == 3:
-                        lr = self.add_Gaussian_noise(lr)
-                    elif i == 4:
+                    elif deg == "sparkle_noise_1":
                         if random.random() < 0.1:
                             lr = self.add_speckle_noise(lr)
 
                     ### second phase of degradation
-                    elif i == 5:
+                    elif deg == "blur_2":
                         lr = self.generate_kernel2(lr)
-                    elif i == 6:
+                    elif deg == "resize_2":
                         lr = self.random_resizing2(lr)
-                    elif i == 7:
+                    elif deg == "gaussian_noise_2":
                         if random.random() < 0.1:
                             lr = self.add_Poisson_noise(lr)
-                    elif i == 8:
+                    elif deg == "poisson_noise_2":
                         if random.random() < 0.1:
                             lr = self.add_Gaussian_noise(lr)
-                    elif i == 9:
+                    elif deg == "sparkle_noise_2":
                         if random.random() < 0.1:
                             lr = self.add_speckle_noise(lr)
 
@@ -154,19 +188,16 @@ class DataPrepare:
                     lr = self.add_JPEG_noise(lr)
                     lr = self.generate_sinc(lr)
             else:
-                shuffle_order = random.sample(range(self.num_deg), self.num_deg)
-                idx1, idx2 = shuffle_order.index(2), shuffle_order.index(3)
-                if idx1 > idx2:
-                    shuffle_order[idx1], shuffle_order[idx2] = (
-                        shuffle_order[idx2],
-                        shuffle_order[idx1],
-                    )
-                for i in shuffle_order:
-                    if i == 0:
+                shuffle_order = random.sample(
+                    self.deg_processes,
+                    len(self.deg_processes),
+                )
+                for deg in shuffle_order:
+                    if deg == "blur_1":
                         lr = self.add_blur(lr, self.sf)
-                    elif i == 1:
+                    elif deg == "blur_2":
                         lr = self.add_blur(lr, self.sf)
-                    elif i == 2:
+                    elif deg == "resize_1":
                         a, b = lr.shape[1], lr.shape[0]
                         if random.random() < 0.75:
                             sf1 = random.uniform(1, 2 * self.sf)
@@ -191,22 +222,22 @@ class DataPrepare:
                             )
                             lr = lr[0 :: self.sf, 0 :: self.sf, ...]
                         lr = np.clip(lr, 0.0, 1.0)
-                    elif i == 3:
+                    elif deg == "resize_2":
                         lr = cv2.resize(
                             lr,
                             (int(1 / self.sf * a), int(1 / self.sf * b)),
                             interpolation=random.choice([1, 2, 3]),
                         )
                         lr = np.clip(lr, 0.0, 1.0)
-                    elif i == 4:
+                    elif deg == "gaussian_noise_1":
                         lr = self.add_Gaussian_noise(lr)
-                    elif i == 5:
+                    elif deg == "poisson_noise_1":
                         if random.random() < 0.1:
                             lr = self.add_Poisson_noise(lr)
-                    elif i == 6:
+                    elif deg == "sparkle_noise_1":
                         if random.random() < 0.1:
                             lr = self.add_speckle_noise(lr)
-                    elif i == 7:
+                    elif deg == "jpeg_noise_1":
                         if random.random() < 0.9:
                             lr = self.add_JPEG_noise(lr)
 
@@ -1014,3 +1045,28 @@ class DataPrepare:
             image, np.expand_dims(sinc_kernel, axis=2), mode="reflect"
         )
         return image.clip(min=0, max=255)
+
+
+@hydra.main(config_path="../../configs/", config_name="train.yaml")
+def main(cfg):
+    # print(cfg)
+    dp = DataPrepare(cfg.train, cfg.models)
+    imgs = [
+        os.path.join(
+            "/workspace/SuperResolution/example/IBC/20220901/Mobile", x
+        )
+        for x in os.listdir(
+            "/workspace/SuperResolution/example/IBC/20220901/Mobile"
+        )
+        if check_image_file(x)
+    ]
+    for idx, img in enumerate(imgs):
+        img = cv2.imread(img)
+
+        lr, hr = dp.data_pipeline(img)
+
+        cv2.imwrite(f"lr_{idx}.png", lr)
+
+
+if __name__ == "__main__":
+    main()
