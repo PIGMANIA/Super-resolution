@@ -41,4 +41,13 @@ def define_model(model, gpu, gan_train):
 
         generator = Generator(model.generator).to(gpu)
 
+    elif model.name.lower() == "scusr":
+        from archs.SCUSR.models import Generator
+        generator = Generator(model.generator).to(gpu)
+
+        if gan_train:
+            from archs.SCUNet.models import Discriminator
+
+            discriminator = Discriminator(model.discriminator).to(gpu)
+
     return generator, discriminator
