@@ -1,12 +1,3 @@
-"""
-@article{zhang2022practical,
-title={Practical Blind Denoising via Swin-Conv-UNet and Data Synthesis},
-author={Zhang, Kai and Li, Yawei and Liang, Jingyun and Cao, Jiezhang and Zhang, Yulun and Tang, Hao and Timofte, Radu and Van Gool, Luc},
-journal={arXiv preprint},
-year={2022}
-}
-This models.py From: https://github.com/cszn/scunet
-"""
 import hydra
 import math
 import torch
@@ -208,6 +199,35 @@ class Block(nn.Module):
         return x
 
 
+class ChannelAttention(nn.Module):
+    def __init__(self, num_features, reduction):
+        super(ChannelAttention, self).__init__()
+        self.module = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(num_features, num_features // reduction, kernel_size=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(num_features // reduction, num_features, kernel_size=1),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        return x * self.module(x)
+
+
+class RCAB(nn.Module):
+    def __init__(self, num_features, reduction):
+        super(RCAB, self).__init__()
+        self.module = nn.Sequential(
+            nn.Conv2d(num_features, num_features, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(num_features, num_features, kernel_size=3, padding=1),
+            ChannelAttention(num_features, reduction),
+        )
+
+    def forward(self, x):
+        return x + self.module(x)
+
+
 class ConvTransBlock(nn.Module):
     def __init__(
         self,
@@ -218,6 +238,7 @@ class ConvTransBlock(nn.Module):
         drop_path,
         type="W",
         input_resolution=None,
+        reduction=16,
     ):
         """SwinTransformer and Conv Block"""
         super(ConvTransBlock, self).__init__()
@@ -259,17 +280,13 @@ class ConvTransBlock(nn.Module):
             bias=True,
         )
 
-        self.conv_block = nn.Sequential(
-            nn.Conv2d(self.conv_dim, self.conv_dim, 3, 1, 1, bias=False),
-            nn.ReLU(True),
-            nn.Conv2d(self.conv_dim, self.conv_dim, 3, 1, 1, bias=False),
-        )
+        self.rcab = RCAB(self.conv_dim, reduction)
 
     def forward(self, x):
         conv_x, trans_x = torch.split(
             self.conv1_1(x), (self.conv_dim, self.trans_dim), dim=1
         )
-        conv_x = self.conv_block(conv_x) + conv_x
+        conv_x = self.rcab(conv_x) + conv_x
         trans_x = Rearrange("b c h w -> b h w c")(trans_x)
         trans_x = self.trans_block(trans_x)
         trans_x = Rearrange("b h w c -> b c h w")(trans_x)
@@ -284,24 +301,25 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
         self.scale = cfg.scale
         self.in_nc = cfg.in_nc
-        self.config = cfg.config
+        self.blocks = cfg.blocks
         self.dim = cfg.dim
         self.head_dim = cfg.head_dim
         self.window_size = cfg.window_size
         self.drop_path_rate = cfg.drop_path_rate
         self.input_resolution = cfg.input_resolution
         self.upsampler = cfg.upsampler
+        self.reduction = cfg.reduction
 
         # drop path rate for each layer
         dpr = [
             x.item()
-            for x in torch.linspace(0, self.drop_path_rate, sum(self.config))
+            for x in torch.linspace(0, self.drop_path_rate, sum(self.blocks))
         ]
 
         self.m_head = [nn.Conv2d(self.in_nc, self.dim, 3, 1, 1, bias=False)]
 
         begin = 0
-        self.m_down1 = [
+        self.body = [
             ConvTransBlock(
                 self.dim // 2,
                 self.dim // 2,
@@ -310,98 +328,9 @@ class Generator(nn.Module):
                 dpr[i + begin],
                 "W" if not i % 2 else "SW",
                 self.input_resolution,
+                self.reduction,
             )
-            for i in range(self.config[0])
-        ] + [nn.Conv2d(self.dim, 2 * self.dim, 2, 2, 0, bias=False)]
-
-        begin += self.config[0]
-        self.m_down2 = [
-            ConvTransBlock(
-                self.dim,
-                self.dim,
-                self.head_dim,
-                self.window_size,
-                dpr[i + begin],
-                "W" if not i % 2 else "SW",
-                self.input_resolution // 2,
-            )
-            for i in range(self.config[1])
-        ] + [nn.Conv2d(2 * self.dim, 4 * self.dim, 2, 2, 0, bias=False)]
-
-        begin += self.config[1]
-        self.m_down3 = [
-            ConvTransBlock(
-                2 * self.dim,
-                2 * self.dim,
-                self.head_dim,
-                self.window_size,
-                dpr[i + begin],
-                "W" if not i % 2 else "SW",
-                self.input_resolution // 4,
-            )
-            for i in range(self.config[2])
-        ] + [nn.Conv2d(4 * self.dim, 8 * self.dim, 2, 2, 0, bias=False)]
-
-        begin += self.config[2]
-        self.m_body = [
-            ConvTransBlock(
-                4 * self.dim,
-                4 * self.dim,
-                self.head_dim,
-                self.window_size,
-                dpr[i + begin],
-                "W" if not i % 2 else "SW",
-                self.input_resolution // 8,
-            )
-            for i in range(self.config[3])
-        ]
-
-        begin += self.config[3]
-        self.m_up3 = [
-            nn.ConvTranspose2d(8 * self.dim, 4 * self.dim, 2, 2, 0, bias=False),
-        ] + [
-            ConvTransBlock(
-                2 * self.dim,
-                2 * self.dim,
-                self.head_dim,
-                self.window_size,
-                dpr[i + begin],
-                "W" if not i % 2 else "SW",
-                self.input_resolution // 4,
-            )
-            for i in range(self.config[4])
-        ]
-
-        begin += self.config[4]
-        self.m_up2 = [
-            nn.ConvTranspose2d(4 * self.dim, 2 * self.dim, 2, 2, 0, bias=False),
-        ] + [
-            ConvTransBlock(
-                self.dim,
-                self.dim,
-                self.head_dim,
-                self.window_size,
-                dpr[i + begin],
-                "W" if not i % 2 else "SW",
-                self.input_resolution // 2,
-            )
-            for i in range(self.config[5])
-        ]
-
-        begin += self.config[5]
-        self.m_up1 = [
-            nn.ConvTranspose2d(2 * self.dim, self.dim, 2, 2, 0, bias=False),
-        ] + [
-            ConvTransBlock(
-                self.dim // 2,
-                self.dim // 2,
-                self.head_dim,
-                self.window_size,
-                dpr[i + begin],
-                "W" if not i % 2 else "SW",
-                self.input_resolution,
-            )
-            for i in range(self.config[6])
+            for i in range(self.blocks[0])
         ]
 
         if self.upsampler == "nearest+conv":
@@ -420,13 +349,7 @@ class Generator(nn.Module):
             self.m_tail = [nn.Conv2d(self.dim, self.in_nc, 3, 1, 1, bias=False)]
 
         self.m_head = nn.Sequential(*self.m_head)
-        self.m_down1 = nn.Sequential(*self.m_down1)
-        self.m_down2 = nn.Sequential(*self.m_down2)
-        self.m_down3 = nn.Sequential(*self.m_down3)
-        self.m_body = nn.Sequential(*self.m_body)
-        self.m_up3 = nn.Sequential(*self.m_up3)
-        self.m_up2 = nn.Sequential(*self.m_up2)
-        self.m_up1 = nn.Sequential(*self.m_up1)
+        self.body = nn.Sequential(*self.body)
         self.m_tail = nn.Sequential(*self.m_tail)
         # self.apply(self._init_weights)
 
@@ -435,18 +358,10 @@ class Generator(nn.Module):
         paddingBottom = int(np.ceil(h / 64) * 64 - h)
         paddingRight = int(np.ceil(w / 64) * 64 - w)
         x0 = nn.ReplicationPad2d((0, paddingRight, 0, paddingBottom))(x0)
-
         x1 = self.m_head(x0)
-        x2 = self.m_down1(x1)
-        x3 = self.m_down2(x2)
-        x4 = self.m_down3(x3)
-        x = self.m_body(x4)
-        x = self.m_up3(x + x4)
-        x = self.m_up2(x + x3)
-        x = self.m_up1(x + x2)
+        x = self.body(x1)
 
         if self.upsampler == "nearest+conv":
-            # x = self.lrelu(x)
             x = self.m_tail(x) + x1
             x = self.lrelu(
                 self.conv_up1(
@@ -575,10 +490,11 @@ class Discriminator(nn.Module):
 def main(cfg):
     # torch.cuda.empty_cache()
     net = Generator(cfg.generator)
-
     x = torch.randn((1, 3, 64, 256))
     x = net(x)
     print(x.shape)
+
+    print(f"model params : {sum(p.numel() for p in net.parameters())}")
 
 
 if __name__ == "__main__":

@@ -74,13 +74,13 @@ class ResidualDenseBlock(nn.Module):
 class RRDB(nn.Module):
     def __init__(self, num_feat, num_grow_ch=32):
         super(RRDB, self).__init__()
-        self.rdb1 = ResidualDenseBlock(num_feat, num_grow_ch)
-        self.rdb2 = ResidualDenseBlock(num_feat, num_grow_ch)
-        self.rdb3 = ResidualDenseBlock(num_feat, num_grow_ch)
+        self.RDB1 = ResidualDenseBlock(num_feat, num_grow_ch)
+        self.RDB2 = ResidualDenseBlock(num_feat, num_grow_ch)
+        self.RDB3 = ResidualDenseBlock(num_feat, num_grow_ch)
 
     def forward(self, x):
-        out = self.rdb1(x)
-        out = self.rdb2(out)
-        out = self.rdb3(out)
+        out = self.RDB1(x)
+        out = self.RDB2(out)
+        out = self.RDB3(out)
         # Emperically, we use 0.2 to scale the residual for better performance
         return out * 0.2 + x

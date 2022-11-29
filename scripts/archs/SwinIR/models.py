@@ -3,6 +3,7 @@
 # Originally Written by Ze Liu, Modified by Jingyun Liang.
 # -----------------------------------------------------------------------------------
 
+import hydra
 import math
 import torch
 import torch.nn as nn
@@ -645,6 +646,7 @@ class RSTB(nn.Module):
         )
 
     def forward(self, x, x_size):
+
         return (
             self.patch_embed(
                 self.conv(
@@ -1031,8 +1033,8 @@ class Generator(nn.Module):
         return x
 
     def forward_features(self, x):
-        x_size = (x.shape[2], x.shape[3])
-        x = self.patch_embed(x)
+        x_size = (x.shape[2], x.shape[3])  # torch.Size([1, 60, 64, 256])
+        x = self.patch_embed(x)  # torch.Size([1, 16384, 60])
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
@@ -1106,26 +1108,19 @@ class Generator(nn.Module):
         return flops
 
 
-if __name__ == "__main__":
-    upscale = 4
-    window_size = 8
-    height = (1024 // upscale // window_size + 1) * window_size
-    width = (720 // upscale // window_size + 1) * window_size
-
-    model = Generator(
-        upscale=2,
-        img_size=(height, width),
-        window_size=window_size,
-        img_range=1.0,
-        depths=[3, 3, 3, 3],
-        embed_dim=30,
-        num_heads=[3, 3, 3, 3],
-        mlp_ratio=2,
-        upsampler="",
-    )
-    print(model)
+@hydra.main(
+    config_path="/workspace/SuperResolution/configs/models",
+    config_name="SWINIR.yaml",
+)
+def main(cfg):
+    model = Generator(cfg.generator)
+    # print(model)
     # print(height, width, model.flops() / 1e9)
 
-    x = torch.randn((1, 3, height, width))
+    x = torch.randn((1, 3, 64, 256))
     x = model(x)
     print(x.shape)
+
+
+if __name__ == "__main__":
+    main()
