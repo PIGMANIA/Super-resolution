@@ -11,15 +11,12 @@ from utils import check_image_file, convert_rgb_to_y
 
 class TrainDataset(Dataset):
     def __init__(self, train, model):
-
         self.data_pipeline = DataPrepare(train, model)
-
         self.hrfiles = [
             os.path.join(train.hr_dir, x)
             for x in os.listdir(train.hr_dir)
             if check_image_file(x)
         ]
-
         self.len = len(self.hrfiles)
         self.to_tensor = transforms.ToTensor()
 
@@ -57,6 +54,27 @@ class TrainYUVDataset(Dataset):
         hr = convert_rgb_to_y(hr)
 
         return np.expand_dims(lr / 255.0, 0), np.expand_dims(hr / 255.0, 0)
+
+    def __len__(self):
+        return self.len
+
+
+class TestDataset(Dataset):
+    def __init__(self, test, model):
+        super().__init__()
+        self.scale = model.generator.scale
+        self.lrfiles = [
+            os.path.join(test.lr_dir, x)
+            for x in os.listdir(test.lr_dir)
+            if check_image_file(x)
+        ]
+        self.to_tensor = transforms.ToTensor()
+        self.len = len(self.lrfiles)
+
+    def __getitem__(self, index):
+        lr = cv2.imread(self.lrfiles[index])
+        lr = cv2.cvtColor(lr, cv2.COLOR_BGR2RGB)
+        return self.to_tensor(lr)
 
     def __len__(self):
         return self.len

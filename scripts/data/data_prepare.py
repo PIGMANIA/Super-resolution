@@ -262,9 +262,7 @@ class DataPrepare:
     def random_crop(self, hr, lr=None, crop_size=320):
         max_x = hr.shape[1] - crop_size
         max_y = hr.shape[0] - crop_size
-        # print(
-        #     f"w : {hr.shape[1]}, h : {hr.shape[0]}, crop_size : {crop_size}, max_x : {max_x}, max_y : {max_y}"
-        # )
+
         x = np.random.randint(0, max_x)
         y = np.random.randint(0, max_y)
 

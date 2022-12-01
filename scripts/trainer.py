@@ -16,6 +16,7 @@ from torch.utils.data.dataloader import DataLoader
 
 from data.dataset import (
     TrainDataset,
+    TestDataset,
     TrainYUVDataset,
     ValidDataset,
     PiPalValidDataset,
@@ -40,8 +41,10 @@ class Trainer:
 
         ### Common setting
         self.best_score = None
-        self.save_path = cfg.train.common.ckpt_dir
-        os.makedirs(self.save_path, exist_ok=True)
+        self.save_model_path = cfg.train.common.ckpt_dir
+        self.save_image_path = cfg.train.common.save_img_dir
+        os.makedirs(self.save_model_path, exist_ok=True)
+        os.makedirs(self.save_image_path, exist_ok=True)
 
         self.gan_train = cfg.train.common.GAN
         self.scale = cfg.models.generator.scale
@@ -73,6 +76,7 @@ class Trainer:
         self.distributed = cfg.train.ddp.distributed
         self.train_dataloader = None
         self.valid_dataloader = None
+        self.test_dataloader = None
 
         ### Initializer
         if self.use_wandb:
@@ -113,7 +117,7 @@ class Trainer:
                 else:
                     self.generator.load_state_dict(ckpt["g"])
                 self.g_optim.load_state_dict(ckpt["g_optim"])
-                self.start_iters = 0  # ckpt["iteration"] + 1
+                self.start_iters = ckpt["iteration"] + 1
             else:
                 self.generator.load_state_dict(ckpt)
 
@@ -177,7 +181,7 @@ class Trainer:
         print("Initialized the optimizers")
 
     def _init_scheduler(self, cfg):
-        if cfg.models.generator.path:
+        if self.start_iters > 0:
             self.g_scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 self.g_optim,
                 cfg.train.scheduler.g_milestones,
@@ -192,7 +196,7 @@ class Trainer:
             )
 
         if self.gan_train:
-            if len(cfg.models.discriminator.path) > 0:
+            if self.start_iters > 0:
                 self.d_scheduler = torch.optim.lr_scheduler.MultiStepLR(
                     self.d_optim,
                     cfg.train.scheduler.d_milestones,
@@ -218,6 +222,7 @@ class Trainer:
         )
 
         train_dataset = TrainDataset(cfg.train.dataset.train, cfg.models)
+        test_dataset = TestDataset(cfg.train.dataset.test, cfg.models)
 
         if self.distributed:
             train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -225,8 +230,14 @@ class Trainer:
                 num_replicas=cfg.train.ddp.world_size,
                 rank=cfg.train.ddp.rank,
             )
+            test_sampler = torch.utils.data.distributed.DistributedSampler(
+                test_dataset,
+                num_replicas=cfg.train.ddp.world_size,
+                rank=cfg.train.ddp.rank,
+            )
         else:
             train_sampler = None
+            test_sampler = None
 
         self.train_dataloader = sample_data(
             DataLoader(
@@ -238,6 +249,14 @@ class Trainer:
                 sampler=train_sampler,
                 drop_last=True,
             )
+        )
+        self.test_dataloader = DataLoader(
+            dataset=test_dataset,
+            batch_size=cfg.train.dataset.test.batch_size,
+            shuffle=False,
+            num_workers=cfg.train.dataset.num_workers,
+            pin_memory=True,
+            sampler=test_sampler,
         )
 
         # self.valid_dataloader = DataLoader(
@@ -308,6 +327,9 @@ class Trainer:
             self.g_optim.step()
             self.g_scheduler.step()
 
+            if self.use_wandb:
+                wandb.log({"g loss": loss})
+
             if self.gpu == 0:
                 if i % self.save_img_every == 0:
                     results = torch.cat(
@@ -321,36 +343,26 @@ class Trainer:
                         2,
                     )
                     vutils.save_image(
-                        results, os.path.join(self.save_path, f"preds.png")
+                        results,
+                        os.path.join(self.save_image_path, f"compare.png"),
                     )
 
                 if i % self.save_model_every == 0:
+                    self.test(i)
                     if isinstance(self.generator, nn.DataParallel):
                         g_state_dict = self.generator.module.state_dict()
                     else:
                         g_state_dict = self.generator.state_dict()
 
-                    # scores = self.valid()
-                    # if self.best_score == None:
-                    #     self.best_score = scores["PSNR_SCORE"]
-                    # elif scores["PSNR_SCORE"] > self.best_score:
-                    #     self.best_score = scores["PSNR_SCORE"]
-                    #     if self.use_wandb:
-                    #         wandb.log({"Best psnr": self.best_score})
-                    #     save_model(
-                    #         g_state_dict,
-                    #         os.path.join(
-                    #             self.save_path, f"best_{str(i).zfill(6)}.pth"
-                    #         ),
-                    #     )
-                    # else:
                     save_model(
                         {
                             "g": g_state_dict,
                             "g_optim": self.g_optim.state_dict(),
                             "iteration": i,
                         },
-                        os.path.join(self.save_path, f"{str(i).zfill(6)}.pth"),
+                        os.path.join(
+                            self.save_model_path, f"{str(i).zfill(6)}.pth"
+                        ),
                     )
 
     def train_gan(self):
@@ -391,9 +403,12 @@ class Trainer:
             fake_pred = self.discriminator(preds)
 
             g_loss = 0.0
-            g_loss += self.l1loss(preds, hr)
-            g_loss += self.perceptual_loss(preds, hr)
-            g_loss += self.gan_loss(fake_pred, True)
+            l1loss = self.l1loss(preds, hr)
+            perceptual_loss = self.perceptual_loss(preds, hr)
+            gan_loss = self.gan_loss(fake_pred, True)
+            g_loss += l1loss
+            g_loss += perceptual_loss
+            g_loss += gan_loss
 
             self.generator.zero_grad()
             g_loss.backward()
@@ -401,6 +416,16 @@ class Trainer:
 
             self.g_scheduler.step()
             self.d_scheduler.step()
+
+            if self.use_wandb:
+                wandb.log(
+                    {
+                        "L1 loss": l1loss,
+                        "perceptual loss": perceptual_loss,
+                        "gan loss": gan_loss,
+                        "g loss": g_loss,
+                    }
+                )
 
             if self.gpu == 0:
                 if i % self.save_img_every == 0:
@@ -415,10 +440,12 @@ class Trainer:
                         2,
                     )
                     vutils.save_image(
-                        results, os.path.join(self.save_path, f"preds.png")
+                        results,
+                        os.path.join(self.save_image_path, f"compare.png"),
                     )
 
                 if i % self.save_model_every == 0:
+                    self.test(i)
                     if isinstance(self.generator, nn.DataParallel):
                         g_state_dict = self.generator.module.state_dict()
                         d_state_dict = self.discriminator.module.state_dict()
@@ -434,7 +461,7 @@ class Trainer:
                     #     wandb.log({"Best lpips": self.best_score})
                     #     save_model(
                     #         g_state_dict,
-                    #         os.path.join(self.save_path, f"best.pth"),
+                    #         os.path.join(self.save_model_path, f"best.pth"),
                     #     )
                     # else:
                     save_model(
@@ -444,7 +471,7 @@ class Trainer:
                             "iteration": i,
                         },
                         os.path.join(
-                            self.save_path, f"g_{str(i).zfill(6)}.pth"
+                            self.save_model_path, f"g_{str(i).zfill(6)}.pth"
                         ),
                     )
 
@@ -455,7 +482,7 @@ class Trainer:
                             "iteration": i,
                         },
                         os.path.join(
-                            self.save_path, f"d_{str(i).zfill(6)}.pth"
+                            self.save_model_path, f"d_{str(i).zfill(6)}.pth"
                         ),
                     )
 
@@ -486,46 +513,56 @@ class Trainer:
 
         return scores
 
-    def pipal_valid(self):
+    def test(self, iter):
         self.generator.eval()
 
-        scores = {}
-        for m in self.metrics:
-            scores[m.name] = []
-
-        to_tensor = transforms.ToTensor()
-
-        for lrs, hr, lrnames in self.valid_dataloader:
-            lrnames = np.array(lrnames).flatten()
-            hr = to_tensor(np.array(hr).squeeze(0)).unsqueeze(0).to(self.gpu)
-            lrs = np.stack(lrs, 0)
-
-            for lr in lrs:
-                lr = to_tensor(lr.squeeze(0)).unsqueeze(0).to(self.gpu)
-
-                with torch.no_grad():
-                    preds = self.generator(lr)
-
-                for m in self.metrics:
-                    scores[m.name].append(m(preds, hr).item())
-
-        for m in self.metrics:
-            scores[m.name] = sum(scores[m.name]) / len(scores[m.name])
-
-        if self.use_wandb:
-            wandb.log(scores)
-
+        for idx, lr in enumerate(self.test_dataloader):
+            lr = lr.to(self.gpu)
+            with torch.no_grad():
+                preds = self.generator(lr)
+            vutils.save_image(
+                preds,
+                os.path.join(self.save_image_path, f"{iter}_preds_{idx}.png"),
+            )
         self.generator.train()
-        return scores
+
+    # def pipal_valid(self):
+    #     self.generator.eval()
+
+    #     scores = {}
+    #     for m in self.metrics:
+    #         scores[m.name] = []
+
+    #     to_tensor = transforms.ToTensor()
+
+    #     for lrs, hr, lrnames in self.valid_dataloader:
+    #         lrnames = np.array(lrnames).flatten()
+    #         hr = to_tensor(np.array(hr).squeeze(0)).unsqueeze(0).to(self.gpu)
+    #         lrs = np.stack(lrs, 0)
+
+    #         for lr in lrs:
+    #             lr = to_tensor(lr.squeeze(0)).unsqueeze(0).to(self.gpu)
+
+    #             with torch.no_grad():
+    #                 preds = self.generator(lr)
+
+    #             for m in self.metrics:
+    #                 scores[m.name].append(m(preds, hr).item())
+
+    #     for m in self.metrics:
+    #         scores[m.name] = sum(scores[m.name]) / len(scores[m.name])
+
+    #     if self.use_wandb:
+    #         wandb.log(scores)
+
+    #     self.generator.train()
+    #     return scores
 
     def train(self):
         if not self.gan_train:
             self.train_psnr()
         else:
             self.train_gan()
-
-
-# 17827 GPU 4 SCUNET GAN
 
 
 @hydra.main(config_path="../configs/", config_name="train.yaml")
@@ -550,5 +587,6 @@ def main(cfg):
         Trainer(0, cfg)
 
 
+# 1180642 no blur scusr
 if __name__ == "__main__":
     main()
